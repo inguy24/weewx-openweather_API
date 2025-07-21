@@ -497,8 +497,8 @@ sudo tail -f /var/log/weewx/weewx.log | grep -E "(OpenWeather|ERROR|WARNING)"
 
 ## Related Projects
 
-- [WeeWX CDC Surveillance Extension](https://github.com/YOUR_USERNAME/weewx-cdc-surveillance) - Public health surveillance data
-- [WeeWX Environmental Health Extension](https://github.com/YOUR_USERNAME/weewx-environmental-health) - Combined health risk assessment
+- [WeeWX CDC Surveillance Extension](https://github.com/inguy24/weewx-cdc-surveillance) - Public health surveillance data
+- [WeeWX Environmental Health Extension](https://github.com/inguy24/weewx-environmental-health) - Combined health risk assessment
 - [WeeWX Main Project](https://github.com/weewx/weewx) - Weather station software framework
 
 ## License
