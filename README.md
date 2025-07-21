@@ -32,7 +32,7 @@ A comprehensive WeeWX extension that integrates OpenWeatherMap APIs to provide w
 ### Method 1: Extension Installer (Recommended)
 ```bash
 # Download latest release
-wget https://github.com/YOUR_USERNAME/weewx-openweather/releases/latest/download/weewx-openweather.zip
+wget https://github.com/inguy24/weewx-openweather_API/releases/latest/download/weewx-openweather.zip
 
 # Install with interactive configuration
 weectl extension install weewx-openweather.zip
@@ -50,8 +50,8 @@ sudo systemctl restart weewx
 ### Method 2: Manual Installation
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/weewx-openweather.git
-cd weewx-openweather
+git clone https://github.com/inguy24/weewx-openweather_API.git
+cd weewx-openweather_API
 
 # Create package
 zip -r weewx-openweather.zip install.py bin/ README.md CHANGELOG.md MANIFEST
@@ -443,8 +443,8 @@ weewx-openweather/
 ### Development Setup
 ```bash
 # Clone for development
-git clone https://github.com/YOUR_USERNAME/weewx-openweather.git
-cd weewx-openweather
+git clone https://github.com/inguy24/weewx-openweather_API.git
+cd weewx-openweather_API
 
 # Test installation locally
 zip -r weewx-openweather-dev.zip install.py bin/ README.md CHANGELOG.md MANIFEST
@@ -478,7 +478,7 @@ sudo tail -f /var/log/weewx/weewx.log | grep -E "(OpenWeather|ERROR|WARNING)"
 ## Support
 
 - **Documentation**: This README and inline code comments
-- **Issues**: Report bugs and feature requests on [GitHub Issues](https://github.com/YOUR_USERNAME/weewx-openweather/issues)
+- **Issues**: Report bugs and feature requests on [GitHub Issues](https://github.com/inguy24/weewx-openweather_API/issues)
 - **WeeWX Forum**: [WeeWX User Group](https://groups.google.com/g/weewx-user)
 - **API Documentation**: [OpenWeatherMap API Docs](https://openweathermap.org/api)
 
