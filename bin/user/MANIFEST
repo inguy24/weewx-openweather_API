@@ -1,0 +1,7 @@
+# WeeWX OpenWeather Extension Manifest
+# Lists all files included in the extension package
+
+install.py
+bin/user/openweather.py
+README.md
+CHANGELOG.md
