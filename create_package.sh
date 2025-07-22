@@ -24,34 +24,36 @@ mkdir -p ${PACKAGE_DIR}/bin/user
 echo "Copying extension files..."
 
 # Core files
-cp install.py ${PACKAGE_DIR}/
-cp MANIFEST ${PACKAGE_DIR}/
+echo "  Copying install.py..."
+cp install.py ${PACKAGE_DIR}/ || { echo "Error: install.py not found"; exit 1; }
+
+echo "  Copying MANIFEST..."
+cp MANIFEST ${PACKAGE_DIR}/ || { echo "Error: MANIFEST not found"; exit 1; }
 
 # Service implementation
-cp bin/user/openweather.py ${PACKAGE_DIR}/bin/user/
+echo "  Copying bin/user/openweather.py..."
+cp bin/user/openweather.py ${PACKAGE_DIR}/bin/user/ || { echo "Error: bin/user/openweather.py not found"; exit 1; }
 
 # Configuration files
-cp field_selection_defaults.yaml ${PACKAGE_DIR}/
-cp openweather_fields.yaml ${PACKAGE_DIR}/
+echo "  Copying field_selection_defaults.yaml..."
+cp field_selection_defaults.yaml ${PACKAGE_DIR}/ || { echo "Error: field_selection_defaults.yaml not found"; exit 1; }
+
+echo "  Copying openweather_fields.yaml..."
+cp openweather_fields.yaml ${PACKAGE_DIR}/ || { echo "Error: openweather_fields.yaml not found"; exit 1; }
 
 # Documentation
-cp README.md ${PACKAGE_DIR}/
-cp CHANGELOG.md ${PACKAGE_DIR}/
+echo "  Copying README.md..."
+cp README.md ${PACKAGE_DIR}/ || { echo "Error: README.md not found"; exit 1; }
+
+echo "  Copying CHANGELOG.md..."
+cp CHANGELOG.md ${PACKAGE_DIR}/ || { echo "Error: CHANGELOG.md not found"; exit 1; }
 
 # Verify all files are present
 echo "Verifying package contents..."
 echo "Required files:"
 
 while IFS= read -r file; do
-    if [[ ! "$file" =~ ^#.*$ ]] && [[ -n "$file" ]]; then
-        if [ -f "${PACKAGE_DIR}/${file}" ]; then
-            echo "  ✓ ${file}"
-        else
-            echo "  ✗ MISSING: ${file}"
-            exit 1
-        fi
-    fi
-done < MANIFEST
+    if 
 
 # Create the zip package
 echo ""
