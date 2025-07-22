@@ -52,8 +52,19 @@ cp CHANGELOG.md ${PACKAGE_DIR}/ || { echo "Error: CHANGELOG.md not found"; exit 
 echo "Verifying package contents..."
 echo "Required files:"
 
+# Read from the copied MANIFEST file in the package directory
 while IFS= read -r file; do
-    if 
+    if [[ ! "$file" =~ ^#.*$ ]] && [[ -n "$file" ]]; then
+        if [ -f "${PACKAGE_DIR}/${file}" ]; then
+            echo "  ✓ ${file}"
+        else
+            echo "  ✗ MISSING: ${file}"
+            echo "    Expected: ${PACKAGE_DIR}/${file}"
+            ls -la "${PACKAGE_DIR}/" 2>/dev/null || echo "    Package directory not found"
+            exit 1
+        fi
+    fi
+done < "${PACKAGE_DIR}/MANIFEST"
 
 # Create the zip package
 echo ""
