@@ -1,0 +1,58 @@
+# openweather_fields.yaml - Advanced field selection
+field_selection:
+  current_weather:
+    description: "Real-time weather conditions"
+    
+    temperature:
+      temp: true              # Current temperature ✅ Essential
+      feels_like: true        # Feels like temperature ✅ Popular
+      temp_min: false         # Daily minimum (optional)
+      temp_max: false         # Daily maximum (optional)
+      
+    atmospheric:
+      pressure: true          # Atmospheric pressure ✅ Essential
+      humidity: true          # Relative humidity ✅ Essential
+      sea_level: false        # Sea level pressure (optional)
+      grnd_level: false       # Ground level pressure (optional)
+      
+    sky_conditions:
+      cloud_cover: true       # Cloud cover 0-100% ✅ Important for health models
+      visibility: true        # Visibility distance ✅ Useful
+      
+    wind:
+      wind_speed: true        # Wind speed ✅ Essential
+      wind_direction: true    # Wind direction (degrees) ✅ Essential
+      wind_gust: false        # Wind gusts (optional)
+      
+    precipitation:
+      rain_1h: false          # Rain last hour (optional)
+      rain_3h: false          # Rain last 3 hours (optional)
+      snow_1h: false          # Snow last hour (optional)
+      snow_3h: false          # Snow last 3 hours (optional)
+      
+    weather_info:
+      weather_main: false     # Weather category (optional)
+      weather_description: false # Weather description (optional)
+      weather_icon: false     # Weather icon code (optional)
+      
+  air_quality:
+    description: "Air pollution data for health assessment"
+    
+    particulates:
+      pm2_5: true             # PM2.5 ✅ Primary health indicator
+      pm10: true              # PM10 ✅ Respiratory irritant
+      
+    gases:
+      ozone: true             # Ground-level ozone ✅ Major asthma trigger
+      nitrogen_dioxide: true  # NO2 ✅ Respiratory irritant
+      sulfur_dioxide: false   # SO2 - less common (optional)
+      carbon_monoxide: false  # CO - poisoning risk (optional)
+      nitrogen_monoxide: false # NO - less relevant (optional)
+      ammonia: false          # NH3 - agricultural areas (optional)
+      
+    indices:
+      openweather_aqi: true   # OpenWeather 1-5 AQI scale ✅ Essential
+      
+    timestamps:
+      weather_timestamp: false      # API data timestamp (optional)
+      air_quality_timestamp: false # API data timestamp (optional)
