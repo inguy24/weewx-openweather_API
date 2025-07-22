@@ -1,446 +1,357 @@
 #!/usr/bin/env python3
 """
-OpenWeather Extension Installer for WeeWX 5.1+
+WeeWX OpenWeather Extension Installer - Enhanced with Field Selection
 
-This installer provides comprehensive OpenWeatherMap API integration with:
-- Current weather data collection
-- Air quality data collection  
-- UV index data collection
-- Modular configuration system
-- Field selection capabilities
-- Proper database schema management
+Provides interactive installation with field selection and dynamic database schema management.
 
-Installation creates database fields only for enabled modules.
+Copyright (C) 2025 WeeWX OpenWeather API Extension
 """
 
-import configobj
-import os
-import subprocess
 import sys
+import os
+import re
+import yaml
+import subprocess
 import time
-import weewx.manager
-from weecfg.extension import ExtensionInstaller
+import configobj
+from typing import Dict, List, Optional, Any
+
+try:
+    from weecfg.extension import ExtensionInstaller
+    import weewx.manager
+except ImportError:
+    print("Error: This installer requires WeeWX 5.1 or later")
+    sys.exit(1)
 
 def loader():
-    """Return the installer instance."""
     return OpenWeatherInstaller()
 
-class OpenWeatherInstaller(ExtensionInstaller):
-    """OpenWeather Extension Installer following WeeWX 5.1 best practices."""
+
+class TerminalUI:
+    """Simple terminal UI for field selection."""
     
     def __init__(self):
-        super(OpenWeatherInstaller, self).__init__(
-            version="1.0.0",
-            name="OpenWeather",
-            description="Comprehensive OpenWeatherMap API integration for weather and air quality data",
-            author="WeeWX Community",
-            author_email="",
-            files=[
-                ('bin/user', ['bin/user/openweather.py'])
-            ],
-            config={
-                'OpenWeatherService': {
-                    'enable': True,
-                    'api_key': 'REPLACE_WITH_YOUR_API_KEY',
-                    'log_success': False,
-                    'log_errors': True,
-                    'timeout': 30,
-                    'retry_attempts': 3,
-                    'modules': {
-                        'current_weather': True,
-                        'air_quality': True,
-                        'uv_index': False,
-                        'forecast_daily': False,
-                        'forecast_hourly': False
-                    },
-                    'intervals': {
-                        'current_weather': 3600,    # 1 hour
-                        'air_quality': 7200,        # 2 hours
-                        'uv_index': 3600,           # 1 hour
-                        'forecast_daily': 21600,    # 6 hours
-                        'forecast_hourly': 3600     # 1 hour
-                    }
-                },
-                'Engine': {
-                    'Services': {
-                        'data_services': 'user.openweather.OpenWeatherService'
-                    }
-                }
-            }
-        )
-        
-        # Database field definitions by module
-        self.module_fields = {
-            'current_weather': {
-                'ow_temperature': 'REAL',
-                'ow_feels_like': 'REAL',
-                'ow_pressure': 'REAL',
-                'ow_humidity': 'REAL',
-                'ow_cloud_cover': 'REAL',
-                'ow_visibility': 'REAL',
-                'ow_wind_speed': 'REAL',
-                'ow_wind_direction': 'REAL'
-            },
-            'air_quality': {
-                'ow_pm25': 'REAL',
-                'ow_pm10': 'REAL',
-                'ow_ozone': 'REAL',
-                'ow_no2': 'REAL',
-                'ow_so2': 'REAL',
-                'ow_co': 'REAL',
-                'ow_aqi': 'INTEGER'
-            },
-            'uv_index': {
-                'ow_uv_current': 'REAL',
-                'ow_uv_max': 'REAL'
-            },
-            'forecast_daily': {
-                'ow_forecast_temp_day1': 'REAL',
-                'ow_forecast_temp_day2': 'REAL'
-            },
-            'forecast_hourly': {
-                'ow_forecast_temp_1h': 'REAL',
-                'ow_forecast_temp_6h': 'REAL'
-            }
-        }
+        self.selected_items = set()
     
-    def configure(self, engine):
-        """Configure the OpenWeather extension with interactive prompts."""
+    def show_complexity_menu(self):
+        """Show complexity level selection menu with field descriptions."""
+        print("\n" + "="*80)
+        print("OPENWEATHER DATA COLLECTION LEVEL")
+        print("="*80)
         
-        print("\n" + "="*60)
-        print("OPENWEATHER EXTENSION CONFIGURATION")
-        print("="*60)
-        
+        # Load defaults to show field lists
         try:
-            # Step 1: Validate station coordinates
-            self._validate_station_coordinates(engine.config_dict)
-            
-            # Step 2: Configure API key
-            api_key = self._configure_api_key(engine.config_dict)
-            
-            # Step 3: Configure modules
-            enabled_modules = self._configure_modules()
-            
-            # Step 4: Configure intervals  
-            intervals = self._configure_intervals(enabled_modules)
-            
-            # Step 5: Update configuration
-            self._update_configuration(engine.config_dict, api_key, enabled_modules, intervals)
-            
-            # Step 6: Create database fields for enabled modules
-            self._create_database_fields(engine.config_dict, enabled_modules)
-            
-            print("\n✓ OpenWeather extension configured successfully!")
-            print("  • Data will be stored with 'ow_' prefix in database")
-            print("  • Restart WeeWX to begin data collection")
-            print("  • Consider installing weewx-cdc-surveillance and weewx-environmental-health")
-            print("  • View data in WeeWX reports and database")
-            
-            return True
-            
-        except Exception as e:
-            print(f"\n✗ Configuration failed: {e}")
-            print("  Manual configuration may be required")
-            return False
-    
-    def _validate_station_coordinates(self, config_dict):
-        """Validate that station coordinates are configured."""
+            defaults_path = os.path.join(os.path.dirname(__file__), 'field_selection_defaults.yaml')
+            with open(defaults_path, 'r') as f:
+                defaults = yaml.safe_load(f)['field_selection_defaults']
+        except:
+            # Fallback if YAML not available
+            defaults = {
+                'minimal': {'field_list': 'Temperature, humidity, pressure, wind speed, PM2.5, AQI'},
+                'standard': {'field_list': 'Temperature, feels-like, humidity, pressure, wind speed & direction, cloud cover, PM2.5, AQI'},
+                'comprehensive': {'field_list': 'All standard fields plus: visibility, wind gusts, daily min/max temp, PM10, ozone, NO2'},
+                'everything': {'field_list': 'All 20+ fields including rain/snow data, atmospheric details, weather descriptions, and all air quality gases'}
+            }
         
-        print("\nValidating station coordinates...")
+        options = [
+            ("Minimal", defaults.get('minimal', {}).get('field_list', '4 essential fields')),
+            ("Standard", defaults.get('standard', {}).get('field_list', '8 most common fields')),
+            ("Comprehensive", defaults.get('comprehensive', {}).get('field_list', '15 advanced fields')),
+            ("Everything", defaults.get('everything', {}).get('field_list', 'All available fields')),
+            ("Custom", "Choose specific fields manually")
+        ]
         
-        station_config = config_dict.get('Station', {})
-        latitude = station_config.get('latitude')
-        longitude = station_config.get('longitude')
-        
-        if not latitude or not longitude:
-            raise ValueError(
-                "Station coordinates not found in [Station] section. "
-                "Please configure latitude and longitude in weewx.conf before installing."
-            )
-        
-        try:
-            lat_float = float(latitude)
-            lon_float = float(longitude)
-            
-            if not (-90 <= lat_float <= 90):
-                raise ValueError(f"Invalid latitude: {latitude} (must be -90 to 90)")
-            if not (-180 <= lon_float <= 180):
-                raise ValueError(f"Invalid longitude: {longitude} (must be -180 to 180)")
-                
-            print(f"✓ Station coordinates: {lat_float:.6f}, {lon_float:.6f}")
-            
-        except ValueError as e:
-            raise ValueError(f"Invalid coordinates in [Station] section: {e}")
-    
-    def _configure_api_key(self, config_dict):
-        """Configure OpenWeatherMap API key with validation."""
-        
-        print("\nOpenWeatherMap API Key Configuration")
+        print("\nChoose data collection level:")
         print("-" * 40)
-        print("Get a free API key at: https://openweathermap.org/api")
-        print("Free tier includes 1,000 calls/day (sufficient for this extension)")
+        
+        for i, (name, description) in enumerate(options, 1):
+            print(f"{i}. {name}")
+            print(f"   Fields: {description}")
+            print()
         
         while True:
-            api_key = input("\nEnter your OpenWeatherMap API key: ").strip()
-            
-            if not api_key:
-                print("✗ API key cannot be empty")
-                continue
-                
-            if len(api_key) < 10:
-                print("✗ API key appears too short (should be ~32 characters)")
-                continue
-                
-            # Basic format validation (OpenWeather API keys are typically hex strings)
-            if not all(c in '0123456789abcdefABCDEF' for c in api_key):
-                print("✗ API key contains invalid characters (should be hexadecimal)")
-                continue
-                
-            print(f"✓ API key accepted: {api_key[:8]}...")
-            return api_key
+            try:
+                choice = input("Enter choice [1-5]: ").strip()
+                if choice in ['1', '2', '3', '4', '5']:
+                    complexity_levels = ['minimal', 'standard', 'comprehensive', 'everything', 'custom']
+                    selected = complexity_levels[int(choice) - 1]
+                    print(f"\n✓ Selected: {options[int(choice) - 1][0]}")
+                    return selected
+                else:
+                    print("Invalid choice. Please enter 1, 2, 3, 4, or 5.")
+            except (KeyboardInterrupt, EOFError):
+                print("\nInstallation cancelled by user.")
+                sys.exit(1)
     
-    def _configure_modules(self):
-        """Configure which OpenWeather modules to enable."""
+    def show_custom_selection(self, field_definitions):
+        """Show interactive field selection for custom configuration."""
+        print("\n" + "="*80)
+        print("CUSTOM FIELD SELECTION")
+        print("="*80)
+        print("Select specific fields to collect and store in your database.")
+        print("Enter 'y' to include a field, 'n' to skip, or press Enter to skip.")
+        print("-" * 80)
         
-        print("\nModule Configuration")
-        print("-" * 20)
-        print("Select which OpenWeather data modules to enable:")
+        selected_fields = {'current_weather': [], 'air_quality': []}
         
-        modules = {
-            'current_weather': {
-                'description': 'Current weather (temperature, humidity, pressure, wind, clouds)',
-                'recommendation': 'Recommended for all users',
-                'default': True
+        for module_name, module_data in field_definitions.items():
+            module_display = module_name.upper().replace('_', ' ')
+            print(f"\n{module_display} DATA:")
+            print("=" * (len(module_display) + 6))
+            
+            for category_name, category_data in module_data['categories'].items():
+                print(f"\n{category_data['display_name']}:")
+                print("-" * (len(category_data['display_name']) + 1))
+                
+                for field_name, field_info in category_data['fields'].items():
+                    while True:
+                        prompt = f"  {field_info['display_name']} [y/n]: "
+                        try:
+                            choice = input(prompt).strip().lower()
+                        except (KeyboardInterrupt, EOFError):
+                            print("\nInstallation cancelled by user.")
+                            sys.exit(1)
+                        
+                        if choice in ['y', 'yes']:
+                            selected_fields[module_name].append(field_name)
+                            print(f"    ✓ {field_info['display_name']} - SELECTED")
+                            break
+                        elif choice in ['n', 'no', '']:
+                            print(f"    ○ {field_info['display_name']} - skipped")
+                            break
+                        else:
+                            print("    Please enter 'y' for yes, 'n' for no, or press Enter to skip")
+        
+        # Show selection summary
+        total_selected = len(selected_fields['current_weather']) + len(selected_fields['air_quality'])
+        print(f"\n" + "="*60)
+        print(f"SELECTION SUMMARY: {total_selected} fields selected")
+        print("="*60)
+        print(f"Current Weather: {len(selected_fields['current_weather'])} fields")
+        print(f"Air Quality: {len(selected_fields['air_quality'])} fields")
+        
+        if total_selected == 0:
+            print("\nWarning: No fields selected. Using 'standard' defaults instead.")
+            return None
+        
+        return selected_fields
+    
+    def confirm_selection(self, complexity_level, field_count_estimate):
+        """Confirm the user's selection before proceeding."""
+        print(f"\n" + "="*60)
+        print("CONFIGURATION CONFIRMATION")
+        print("="*60)
+        print(f"Data collection level: {complexity_level.title()}")
+        print(f"Estimated database fields: {field_count_estimate}")
+        print(f"This will modify your WeeWX database schema.")
+        print("-" * 60)
+        
+        while True:
+            try:
+                confirm = input("Proceed with this configuration? [y/n]: ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                print("\nInstallation cancelled by user.")
+                sys.exit(1)
+            
+            if confirm in ['y', 'yes']:
+                return True
+            elif confirm in ['n', 'no']:
+                return False
+            else:
+                print("Please enter 'y' for yes or 'n' for no")
+
+
+class FieldSelectionHelper:
+    """Helper class for field selection during installation."""
+    
+    def __init__(self, extension_dir):
+        self.extension_dir = extension_dir
+        self.defaults = self._load_defaults()
+        self.field_definitions = self._load_field_definitions()
+    
+    def _load_defaults(self):
+        """Load field selection defaults."""
+        try:
+            defaults_path = os.path.join(self.extension_dir, 'field_selection_defaults.yaml')
+            with open(defaults_path, 'r') as f:
+                return yaml.safe_load(f)['field_selection_defaults']
+        except Exception as e:
+            print(f"Warning: Could not load field defaults: {e}")
+            return self._get_fallback_defaults()
+    
+    def _load_field_definitions(self):
+        """Load field definitions."""
+        try:
+            definitions_path = os.path.join(self.extension_dir, 'openweather_fields.yaml')
+            with open(definitions_path, 'r') as f:
+                return yaml.safe_load(f)['field_definitions']
+        except Exception as e:
+            print(f"Warning: Could not load field definitions: {e}")
+            return {'current_weather': {'categories': {}}, 'air_quality': {'categories': {}}}
+    
+    def _get_fallback_defaults(self):
+        """Fallback defaults if YAML file not available."""
+        return {
+            'minimal': {
+                'current_weather': ['temp', 'humidity', 'pressure', 'wind_speed'],
+                'air_quality': ['pm2_5', 'aqi']
             },
-            'air_quality': {
-                'description': 'Air quality data (PM2.5, PM10, ozone, NO2, gases, AQI)',
-                'recommendation': 'Recommended for health monitoring',
-                'default': True
+            'standard': {
+                'current_weather': ['temp', 'feels_like', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'cloud_cover'],
+                'air_quality': ['pm2_5', 'aqi']
             },
-            'uv_index': {
-                'description': 'UV radiation data (current and daily maximum)',
-                'recommendation': 'Optional - useful for outdoor activities',
-                'default': False
+            'comprehensive': {
+                'current_weather': ['temp', 'feels_like', 'temp_min', 'temp_max', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'wind_gust', 'cloud_cover', 'visibility'],
+                'air_quality': ['pm2_5', 'pm10', 'ozone', 'no2', 'aqi']
             },
-            'forecast_daily': {
-                'description': '8-day daily weather forecasts',
-                'recommendation': 'Optional - for extended planning',
-                'default': False
-            },
-            'forecast_hourly': {
-                'description': '48-hour hourly weather forecasts',
-                'recommendation': 'Optional - for detailed short-term planning',
-                'default': False
+            'everything': {
+                'current_weather': 'all',
+                'air_quality': 'all'
             }
         }
+    
+    def get_selected_fields(self, complexity_level):
+        """Get field selection for complexity level."""
+        return self.defaults.get(complexity_level, self.defaults.get('standard', {}))
+    
+    def estimate_field_count(self, selected_fields):
+        """Estimate number of database fields for selection."""
+        if not selected_fields:
+            return 0
         
-        enabled_modules = {}
-        
-        for module_name, module_info in modules.items():
-            print(f"\n{module_name}:")
-            print(f"  Description: {module_info['description']}")
-            print(f"  {module_info['recommendation']}")
-            
-            response = self._prompt_yes_no(
-                f"Enable {module_name}?", 
-                default=module_info['default']
-            )
-            enabled_modules[module_name] = response
-            
-            if response:
-                print(f"  ✓ {module_name} enabled")
+        count = 0
+        for module, fields in selected_fields.items():
+            if fields == 'all':
+                # Count all fields in module
+                if module in self.field_definitions:
+                    for category_data in self.field_definitions[module]['categories'].values():
+                        count += len(category_data['fields'])
             else:
-                print(f"  - {module_name} disabled")
+                count += len(fields)
         
-        # Validate at least one module is enabled
-        if not any(enabled_modules.values()):
-            print("\n✗ Warning: No modules enabled. Enabling current_weather by default.")
-            enabled_modules['current_weather'] = True
-        
-        return enabled_modules
+        return count
     
-    def _configure_intervals(self, enabled_modules):
-        """Configure API call intervals for enabled modules."""
+    def get_database_field_mappings(self, selected_fields):
+        """Get database field mappings for selected fields."""
+        mappings = {}
         
-        print("\nAPI Call Interval Configuration")
-        print("-" * 32)
-        print("Configure how often to call OpenWeather APIs:")
-        print("• Free tier: 1,000 calls/day limit")
-        print("• Recommended intervals stay well within limits")
+        for module, fields in selected_fields.items():
+            if module in self.field_definitions:
+                for category_data in self.field_definitions[module]['categories'].values():
+                    for field_name, field_info in category_data['fields'].items():
+                        if fields == 'all' or field_name in fields:
+                            mappings[field_info['database_field']] = field_info['database_type']
         
-        default_intervals = {
-            'current_weather': 3600,    # 1 hour = 24 calls/day
-            'air_quality': 7200,        # 2 hours = 12 calls/day  
-            'uv_index': 3600,           # 1 hour = 24 calls/day
-            'forecast_daily': 21600,    # 6 hours = 4 calls/day
-            'forecast_hourly': 3600     # 1 hour = 24 calls/day
-        }
-        
-        intervals = {}
-        total_daily_calls = 0
-        
-        for module_name, enabled in enabled_modules.items():
-            if enabled:
-                default_interval = default_intervals[module_name]
-                daily_calls = 86400 // default_interval
-                total_daily_calls += daily_calls
-                
-                print(f"\n{module_name}:")
-                print(f"  Recommended interval: {default_interval} seconds ({daily_calls} calls/day)")
-                
-                use_default = self._prompt_yes_no("Use recommended interval?", default=True)
-                
-                if use_default:
-                    intervals[module_name] = default_interval
-                else:
-                    while True:
-                        try:
-                            custom_interval = int(input("Enter custom interval (seconds): "))
-                            if custom_interval < 600:  # 10 minutes minimum
-                                print("✗ Minimum interval is 600 seconds (10 minutes)")
-                                continue
-                            intervals[module_name] = custom_interval
-                            custom_daily = 86400 // custom_interval
-                            print(f"✓ Custom interval: {custom_interval} seconds ({custom_daily} calls/day)")
-                            break
-                        except ValueError:
-                            print("✗ Please enter a valid number")
-        
-        print(f"\nTotal estimated daily API calls: {total_daily_calls}")
-        if total_daily_calls > 800:
-            print("⚠ Warning: High API usage may approach free tier limits")
-        else:
-            print("✓ API usage well within free tier limits")
-        
-        return intervals
+        return mappings
+
+
+class DatabaseManager:
+    """Manages database schema creation during installation."""
     
-    def _update_configuration(self, config_dict, api_key, enabled_modules, intervals):
-        """Update configuration with user settings."""
-        
-        print("\nUpdating configuration...")
-        
-        # Update OpenWeatherService section
-        ow_config = config_dict.setdefault('OpenWeatherService', {})
-        ow_config['api_key'] = api_key
-        ow_config['modules'] = enabled_modules
-        ow_config['intervals'] = intervals
-        
-        print("✓ Configuration updated")
+    def __init__(self, config_dict):
+        self.config_dict = config_dict
     
-    def _create_database_fields(self, config_dict, enabled_modules):
-        """Create database fields for enabled modules only."""
+    def create_database_fields(self, field_mappings):
+        """Create database fields for selected data."""
+        if not field_mappings:
+            return 0
         
-        print("\nDatabase Schema Management")
-        print("=" * 26)
+        print("\n" + "="*60)
+        print("DATABASE SCHEMA MANAGEMENT")
+        print("="*60)
         print("Checking and extending database schema...")
+        print()
         
-        try:
-            # Find weectl executable
-            weectl_path = self._find_weectl()
-            if not weectl_path:
-                print("✗ weectl executable not found")
-                self._provide_manual_database_commands(enabled_modules)
-                return
-            
-            # Get config file path
-            config_path = getattr(config_dict, 'filename', '/etc/weewx/weewx.conf')
-            
-            # Check existing fields and add missing ones for enabled modules
-            existing_fields, missing_fields = self._check_existing_fields(config_dict, enabled_modules)
-            
-            if existing_fields:
-                print(f"\nFields already present in database:")
-                for field in existing_fields:
-                    print(f"  ✓ {field} - already exists, skipping")
-            
-            if missing_fields:
-                print(f"\nAdding missing fields to database:")
-                self._add_missing_fields(weectl_path, config_path, missing_fields)
-            else:
-                print("\n✓ All required fields already present in database")
-            
-            print("\n✓ Database schema management completed successfully")
-            
-        except Exception as e:
-            print(f"\n✗ Database schema management failed: {e}")
-            print("Continuing with installation - manual database setup may be required")
-            self._provide_manual_database_commands(enabled_modules)
+        # Check existing fields
+        existing_fields = self._check_existing_fields()
+        
+        # Determine missing fields
+        missing_fields = set(field_mappings.keys()) - set(existing_fields)
+        already_present = set(field_mappings.keys()) & set(existing_fields)
+        
+        # Report existing fields
+        if already_present:
+            print("Fields already present in database:")
+            for field in sorted(already_present):
+                print(f"  ✓ {field} - already exists, skipping")
+            print()
+        
+        # Add missing fields
+        created_count = 0
+        if missing_fields:
+            print("Adding missing fields to database:")
+            created_count = self._add_missing_fields(missing_fields, field_mappings)
+        else:
+            print("All required fields already exist in database.")
+        
+        print(f"\n✓ Database schema management completed successfully")
+        print(f"  Fields already present: {len(already_present)}")
+        print(f"  Fields created: {created_count}")
+        
+        return created_count
     
-    def _check_existing_fields(self, config_dict, enabled_modules):
-        """Check which required fields already exist in the database."""
-        
-        db_binding = config_dict.get('DataBindings', {}).get('wx_binding', {}).get('database', 'archive_sqlite')
-        
-        existing_fields = []
-        missing_fields = {}
-        
+    def _check_existing_fields(self):
+        """Check which OpenWeather fields already exist in database."""
         try:
-            with weewx.manager.open_manager_with_config(config_dict, db_binding) as dbmanager:
-                # Get current database schema
-                schema_columns = []
+            db_binding = self.config_dict.get('DataBindings', {}).get('wx_binding', 'wx_binding')
+            
+            with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
+                existing_fields = []
                 for column in dbmanager.connection.genSchemaOf('archive'):
-                    schema_columns.append(column[1])  # column[1] is the column name
-                
-                # Check each enabled module's fields
-                for module_name, enabled in enabled_modules.items():
-                    if enabled and module_name in self.module_fields:
-                        for field_name, field_type in self.module_fields[module_name].items():
-                            if field_name in schema_columns:
-                                existing_fields.append(field_name)
-                            else:
-                                missing_fields[field_name] = field_type
-                                
+                    field_name = column[1]
+                    if field_name.startswith('ow_'):  # Only OpenWeather fields
+                        existing_fields.append(field_name)
+            
+            return existing_fields
         except Exception as e:
-            print(f"Warning: Could not check existing fields: {e}")
-            # Assume all fields are missing if we can't check
-            for module_name, enabled in enabled_modules.items():
-                if enabled and module_name in self.module_fields:
-                    missing_fields.update(self.module_fields[module_name])
-        
-        return existing_fields, missing_fields
+            print(f"  Warning: Could not check existing database fields: {e}")
+            return []
     
-    def _add_missing_fields(self, weectl_path, config_path, missing_fields):
+    def _add_missing_fields(self, missing_fields, field_mappings):
         """Add missing database fields using weectl commands."""
+        created_count = 0
+        config_path = self.config_dict.get('config_path', '/etc/weewx/weewx.conf')
         
-        for field_name, field_type in missing_fields.items():
-            print(f"  Adding field '{field_name}' ({field_type})...")
+        # Find weectl executable
+        weectl_path = self._find_weectl()
+        if not weectl_path:
+            print("  Error: weectl executable not found")
+            self._print_manual_commands(missing_fields, field_mappings)
+            return 0
+        
+        for field_name in sorted(missing_fields):
+            field_type = field_mappings[field_name]
             
             try:
-                # Build weectl command
-                cmd = [
-                    weectl_path, 'database', 'add-column', field_name,
-                    '--config', config_path,
-                    '--binding', 'wx_binding',
-                    '-y'  # Don't prompt for confirmation
-                ]
+                print(f"  Adding field '{field_name}' ({field_type})...")
                 
-                # Add --type only for supported numeric types
-                if field_type in ['REAL', 'INTEGER', 'real', 'integer', 'int']:
-                    cmd.insert(-3, '--type')
-                    cmd.insert(-3, field_type)
-                # For text fields, omit --type (weectl rejects VARCHAR/TEXT)
+                cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
                 
-                # Execute command with timeout
+                # Only add --type for REAL/INTEGER (weectl limitation)
+                if field_type in ['REAL', 'INTEGER']:
+                    cmd.insert(-2, '--type')
+                    cmd.insert(-2, field_type)
+                
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
                 if result.returncode == 0:
                     print(f"    ✓ Successfully added '{field_name}'")
+                    created_count += 1
+                elif 'duplicate column' in result.stderr.lower() or 'already exists' in result.stderr.lower():
+                    print(f"    ✓ Field '{field_name}' already exists")
+                    created_count += 1
                 else:
-                    # Check for duplicate column errors (treat as success)
-                    if ('duplicate column' in result.stderr.lower() or 
-                        'already exists' in result.stderr.lower()):
-                        print(f"    ✓ Field '{field_name}' already exists")
-                    else:
-                        print(f"    ✗ Failed to add '{field_name}': {result.stderr}")
-                        
+                    print(f"    ✗ Failed to add '{field_name}': {result.stderr.strip()}")
+                    
             except subprocess.TimeoutExpired:
-                print(f"    ✗ Timeout adding '{field_name}' - database may be locked")
+                print(f"    ✗ Timeout adding '{field_name}'")
             except Exception as e:
                 print(f"    ✗ Error adding '{field_name}': {e}")
+        
+        return created_count
     
     def _find_weectl(self):
         """Find the weectl executable."""
-        
         possible_paths = [
             '/usr/bin/weectl',
             '/usr/local/bin/weectl',
@@ -450,43 +361,309 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         for path in possible_paths:
             try:
-                result = subprocess.run([path, '--version'], capture_output=True, timeout=10)
+                result = subprocess.run([path, '--version'], capture_output=True, text=True, timeout=5)
                 if result.returncode == 0:
                     return path
-            except (subprocess.TimeoutExpired, FileNotFoundError):
+            except:
                 continue
         
         return None
     
-    def _provide_manual_database_commands(self, enabled_modules):
-        """Provide manual database commands when automation fails."""
+    def _print_manual_commands(self, missing_fields, field_mappings):
+        """Print manual commands for database field creation."""
+        print("\n  Manual database field creation commands:")
+        print("  " + "-" * 50)
         
-        print("\nManual Database Setup Commands")
-        print("-" * 32)
-        print("If automatic database setup failed, run these commands manually:")
+        for field_name in sorted(missing_fields):
+            field_type = field_mappings[field_name]
+            if field_type in ['REAL', 'INTEGER']:
+                print(f"  weectl database add-column {field_name} --type {field_type} -y")
+            else:
+                print(f"  weectl database add-column {field_name} -y")
         
-        for module_name, enabled in enabled_modules.items():
-            if enabled and module_name in self.module_fields:
-                print(f"\n# {module_name} module fields:")
-                for field_name, field_type in self.module_fields[module_name].items():
-                    if field_type in ['REAL', 'INTEGER']:
-                        print(f"weectl database add-column {field_name} --type {field_type} -y")
-                    else:
-                        print(f"weectl database add-column {field_name} -y")
+        print("  " + "-" * 50)
+
+
+class OpenWeatherInstaller(ExtensionInstaller):
+    """Enhanced installer with interactive field selection."""
     
-    def _prompt_yes_no(self, question, default=True):
-        """Prompt user for yes/no response."""
+    def __init__(self):
+        super(OpenWeatherInstaller, self).__init__(
+            version="1.0.0",
+            name="OpenWeather",
+            description="OpenWeatherMap API integration with modular field selection",
+            author="WeeWX OpenWeather Extension",
+            author_email="",
+            files=[
+                ('bin/user', ['bin/user/openweather.py']),
+                ('', ['field_selection_defaults.yaml', 'openweather_fields.yaml'])
+            ],
+            config={
+                'OpenWeatherService': {
+                    'enable': True,
+                    'api_key': 'REPLACE_WITH_YOUR_API_KEY',
+                    'timeout': 30,
+                    'log_success': False,
+                    'log_errors': True,
+                    'modules': {
+                        'current_weather': True,
+                        'air_quality': True
+                    },
+                    'intervals': {
+                        'current_weather': 3600,
+                        'air_quality': 7200
+                    },
+                    'field_selection': {
+                        'complexity_level': 'standard'
+                    }
+                },
+                'Engine': {
+                    'Services': {
+                        'data_services': 'user.openweather.OpenWeatherService'
+                    }
+                }
+            }
+        )
+    
+    def configure(self, engine):
+        """Enhanced installation with interactive field selection."""
         
-        default_text = "Y/n" if default else "y/N"
+        print("\n" + "="*80)
+        print("WEEWX OPENWEATHER EXTENSION INSTALLATION")
+        print("="*80)
+        print("This extension collects weather and air quality data from OpenWeatherMap.")
+        print("You'll be guided through API setup and field selection.")
+        print("-" * 80)
+        
+        try:
+            # Step 1: API key setup
+            api_key = self._prompt_api_key()
+            
+            # Step 2: Module selection
+            modules = self._select_modules()
+            
+            # Step 3: Field selection
+            extension_dir = os.path.dirname(__file__)
+            field_helper = FieldSelectionHelper(extension_dir)
+            
+            ui = TerminalUI()
+            complexity = ui.show_complexity_menu()
+            
+            if complexity == 'custom':
+                # Custom field selection
+                field_definitions = field_helper.field_definitions
+                selected_fields = ui.show_custom_selection(field_definitions)
+                if selected_fields is None:
+                    # User selected no fields, fall back to standard
+                    complexity = 'standard'
+                    selected_fields = field_helper.get_selected_fields('standard')
+            else:
+                # Use smart defaults
+                selected_fields = field_helper.get_selected_fields(complexity)
+            
+            # Step 4: Confirmation
+            field_count = field_helper.estimate_field_count(selected_fields)
+            if not ui.confirm_selection(complexity, field_count):
+                print("\nInstallation cancelled by user.")
+                return False
+            
+            # Step 5: Database schema creation
+            field_mappings = field_helper.get_database_field_mappings(selected_fields)
+            db_manager = DatabaseManager(engine.config_dict)
+            created_count = db_manager.create_database_fields(field_mappings)
+            
+            # Step 6: Write configuration
+            self._write_enhanced_config(engine, api_key, modules, complexity, selected_fields)
+            
+            # Step 7: Setup unit system
+            self._setup_unit_system()
+            
+            print("\n" + "="*80)
+            print("INSTALLATION COMPLETED SUCCESSFULLY!")
+            print("="*80)
+            print(f"✓ API key configured")
+            print(f"✓ Data collection level: {complexity.title()}")
+            print(f"✓ Database fields created: {created_count}")
+            print(f"✓ Service registered: user.openweather.OpenWeatherService")
+            print(f"✓ Unit system configured")
+            print("-" * 80)
+            print("Next steps:")
+            print("1. Restart WeeWX: sudo systemctl restart weewx")
+            print("2. Check logs: sudo journalctl -u weewx -f")
+            print("3. Verify data collection in database/reports")
+            print()
+            print("For additional extensions, consider:")
+            print("- weewx-cdc-surveillance (public health data)")
+            print("- weewx-environmental-health (health risk assessment)")
+            print("="*80)
+            
+            return True
+            
+        except Exception as e:
+            print(f"\nInstallation failed: {e}")
+            return False
+    
+    def _prompt_api_key(self):
+        """Prompt for OpenWeatherMap API key with validation."""
+        print("\n" + "="*60)
+        print("OPENWEATHERMAP API KEY SETUP")
+        print("="*60)
+        print("You need a free API key from OpenWeatherMap.")
+        print("1. Visit: https://openweathermap.org/api")
+        print("2. Sign up for free account")
+        print("3. Get your API key from the dashboard")
+        print("-" * 60)
         
         while True:
-            response = input(f"{question} [{default_text}]: ").strip().lower()
+            try:
+                api_key = input("Enter your OpenWeatherMap API key: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nInstallation cancelled by user.")
+                sys.exit(1)
             
-            if not response:
-                return default
-            elif response in ['y', 'yes']:
-                return True
-            elif response in ['n', 'no']:
-                return False
+            if not api_key:
+                print("API key cannot be empty. Please enter your API key.")
+                continue
+            
+            if len(api_key) < 10:
+                print("API key seems too short. Please verify and try again.")
+                continue
+            
+            # Basic format validation
+            if not re.match(r'^[a-fA-F0-9]+$', api_key):
+                print("API key should contain only hexadecimal characters. Please verify and try again.")
+                continue
+            
+            print(f"✓ API key accepted: {api_key[:8]}...")
+            return api_key
+    
+    def _select_modules(self):
+        """Select which OpenWeather modules to enable."""
+        print("\n" + "="*60)
+        print("MODULE SELECTION")
+        print("="*60)
+        print("Choose which OpenWeather data modules to enable:")
+        print("-" * 60)
+        
+        modules = {}
+        
+        # Current weather (always recommended)
+        while True:
+            try:
+                choice = input("Enable current weather data (temperature, humidity, pressure, wind)? [Y/n]: ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                print("\nInstallation cancelled by user.")
+                sys.exit(1)
+            
+            if choice in ['', 'y', 'yes']:
+                modules['current_weather'] = True
+                print("✓ Current weather module enabled")
+                break
+            elif choice in ['n', 'no']:
+                modules['current_weather'] = False
+                print("○ Current weather module disabled")
+                break
             else:
-                print("Please enter 'y' or 'n'")
+                print("Please enter 'y' for yes, 'n' for no, or press Enter for yes")
+        
+        # Air quality
+        while True:
+            try:
+                choice = input("Enable air quality data (PM2.5, ozone, AQI)? [Y/n]: ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                print("\nInstallation cancelled by user.")
+                sys.exit(1)
+            
+            if choice in ['', 'y', 'yes']:
+                modules['air_quality'] = True
+                print("✓ Air quality module enabled")
+                break
+            elif choice in ['n', 'no']:
+                modules['air_quality'] = False
+                print("○ Air quality module disabled")
+                break
+            else:
+                print("Please enter 'y' for yes, 'n' for no, or press Enter for yes")
+        
+        return modules
+    
+    def _write_enhanced_config(self, engine, api_key, modules, complexity, selected_fields):
+        """Write enhanced configuration to weewx.conf."""
+        
+        # Update the service configuration
+        config_dict = engine.config_dict
+        
+        # Ensure OpenWeatherService section exists
+        if 'OpenWeatherService' not in config_dict:
+            config_dict['OpenWeatherService'] = configobj.Section(config_dict, [], config_dict, name='OpenWeatherService')
+        
+        service_config = config_dict['OpenWeatherService']
+        
+        # Basic configuration
+        service_config['enable'] = True
+        service_config['api_key'] = api_key
+        service_config['timeout'] = 30
+        service_config['log_success'] = False
+        service_config['log_errors'] = True
+        
+        # Module configuration
+        if 'modules' not in service_config:
+            service_config['modules'] = configobj.Section(service_config, [], service_config, name='modules')
+        
+        service_config['modules']['current_weather'] = modules.get('current_weather', True)
+        service_config['modules']['air_quality'] = modules.get('air_quality', True)
+        
+        # Interval configuration
+        if 'intervals' not in service_config:
+            service_config['intervals'] = configobj.Section(service_config, [], service_config, name='intervals')
+        
+        service_config['intervals']['current_weather'] = 3600
+        service_config['intervals']['air_quality'] = 7200
+        
+        # Field selection configuration
+        if 'field_selection' not in service_config:
+            service_config['field_selection'] = configobj.Section(service_config, [], service_config, name='field_selection')
+        
+        field_config = service_config['field_selection']
+        
+        if complexity != 'custom':
+            field_config['complexity_level'] = complexity
+        else:
+            field_config['complexity_level'] = 'custom'
+            
+            # Add custom field selections
+            for module, fields in selected_fields.items():
+                if module not in field_config:
+                    field_config[module] = configobj.Section(field_config, [], field_config, name=module)
+                
+                module_config = field_config[module]
+                
+                # Clear existing fields
+                for key in list(module_config.keys()):
+                    del module_config[key]
+                
+                # Add selected fields
+                for field in fields:
+                    module_config[field] = True
+    
+    def _setup_unit_system(self):
+        """Setup unit system extensions for OpenWeather data."""
+        
+        # Add concentration unit group for air quality
+        if 'group_concentration' not in weewx.units.USUnits:
+            weewx.units.USUnits['group_concentration'] = 'microgram_per_meter_cubed'
+            weewx.units.MetricUnits['group_concentration'] = 'microgram_per_meter_cubed'
+            weewx.units.MetricWXUnits['group_concentration'] = 'microgram_per_meter_cubed'
+        
+        # Add formatting for concentration
+        if 'microgram_per_meter_cubed' not in weewx.units.default_unit_format_dict:
+            weewx.units.default_unit_format_dict['microgram_per_meter_cubed'] = '%.1f'
+        
+        # Add label for concentration
+        if 'microgram_per_meter_cubed' not in weewx.units.default_unit_label_dict:
+            weewx.units.default_unit_label_dict['microgram_per_meter_cubed'] = ' μg/m³'
+
+
+if __name__ == '__main__':
+    print("This is a WeeWX extension installer.")
+    print("Use: weectl extension install weewx-openweather.zip")
