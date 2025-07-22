@@ -1,0 +1,25 @@
+# Smart defaults for 4 complexity levels
+field_selection_defaults:
+  minimal:
+    description: "4 essential fields"
+    field_list: "Temperature, humidity, pressure, wind speed, PM2.5, AQI"
+    current_weather: ['temp', 'humidity', 'pressure', 'wind_speed']
+    air_quality: ['pm2_5', 'aqi']
+    
+  standard:
+    description: "8 most common fields"
+    field_list: "Temperature, feels-like, humidity, pressure, wind speed & direction, cloud cover, PM2.5, AQI"
+    current_weather: ['temp', 'feels_like', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'cloud_cover']
+    air_quality: ['pm2_5', 'aqi']
+    
+  comprehensive:
+    description: "15 advanced fields"
+    field_list: "All standard fields plus: visibility, wind gusts, daily min/max temp, PM10, ozone, NO2"
+    current_weather: ['temp', 'feels_like', 'temp_min', 'temp_max', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'wind_gust', 'cloud_cover', 'visibility']
+    air_quality: ['pm2_5', 'pm10', 'ozone', 'no2', 'aqi']
+    
+  everything:
+    description: "All available fields"
+    field_list: "All 20+ fields including rain/snow data, atmospheric details, weather descriptions, and all air quality gases"
+    current_weather: 'all'
+    air_quality: 'all'
