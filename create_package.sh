@@ -52,17 +52,26 @@ cp CHANGELOG.md ${PACKAGE_DIR}/ || { echo "Error: CHANGELOG.md not found"; exit 
 echo "Verifying package contents..."
 echo "Required files:"
 
-# Read from the copied MANIFEST file in the package directory
-while IFS= read -r file; do
-    if [[ ! "$file" =~ ^#.*$ ]] && [[ -n "$file" ]]; then
-        if [ -f "${PACKAGE_DIR}/${file}" ]; then
-            echo "  ✓ ${file}"
-        else
-            echo "  ✗ MISSING: ${file}"
-            echo "    Expected: ${PACKAGE_DIR}/${file}"
-            ls -la "${PACKAGE_DIR}/" 2>/dev/null || echo "    Package directory not found"
-            exit 1
-        fi
+# Read from the copied MANIFEST file in the package directory and debug each line
+while IFS= read -r line; do
+    # Remove any carriage returns and leading/trailing whitespace
+    file=$(echo "$line" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    # Skip comments (lines starting with #) and empty lines
+    if [[ "$file" =~ ^#.*$ ]] || [[ -z "$file" ]]; then
+        echo "  Skipping: '$file'"
+        continue
+    fi
+    
+    # Check if file exists
+    if [ -f "${PACKAGE_DIR}/${file}" ]; then
+        echo "  ✓ ${file}"
+    else
+        echo "  ✗ MISSING: ${file}"
+        echo "    Expected path: ${PACKAGE_DIR}/${file}"
+        echo "    Actual directory contents:"
+        ls -la "${PACKAGE_DIR}/"
+        exit 1
     fi
 done < "${PACKAGE_DIR}/MANIFEST"
 
