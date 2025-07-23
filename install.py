@@ -24,7 +24,6 @@ except ImportError:
     sys.exit(1)
 
 def loader():
-    """Extension installer loader function."""
     return OpenWeatherInstaller()
 
 
@@ -439,7 +438,7 @@ class DatabaseManager:
         self.config_dict = config_dict
     
     def create_database_fields(self, field_mappings):
-        """Create database fields for selected data - simplified approach."""
+        """Create database fields for selected data."""
         if not field_mappings:
             return 0
         
@@ -511,31 +510,6 @@ class DatabaseManager:
             
             try:
                 print(f"  Adding field '{field_name}' ({field_type})...")
-                
-                cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
-                
-                # Only add --type for REAL/INTEGER (weectl limitation)
-                if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, '--type')
-                    cmd.insert(-2, field_type)
-                
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                
-                if result.returncode == 0:
-                    print(f"    ✓ Successfully added '{field_name}'")
-                    created_count += 1
-                elif 'duplicate column' in result.stderr.lower() or 'already exists' in result.stderr.lower():
-                    print(f"    ✓ Field '{field_name}' already exists")
-                    created_count += 1
-                else:
-                    print(f"    ✗ Failed to add '{field_name}': {result.stderr.strip()}")
-                    
-            except subprocess.TimeoutExpired:
-                print(f"    ✗ Timeout adding '{field_name}'")
-            except Exception as e:
-                print(f"    ✗ Error adding '{field_name}': {e}")
-        
-        return created_countd_type})...")
                 
                 cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
                 
@@ -800,34 +774,63 @@ class OpenWeatherInstaller(ExtensionInstaller):
         return modules
     
     def _write_enhanced_config(self, engine, api_key, modules, complexity, selected_fields):
-        """Write simple configuration - based on working AirVisual approach."""
+        """Write enhanced configuration to weewx.conf."""
         
+        # Update the service configuration
         config_dict = engine.config_dict
         
-        # Create OpenWeatherService section
-        config_dict['OpenWeatherService'] = {
-            'enable': True,
-            'api_key': api_key,
-            'timeout': 30,
-            'log_success': False,
-            'log_errors': True,
-            'modules': {
-                'current_weather': modules.get('current_weather', True),
-                'air_quality': modules.get('air_quality', True)
-            },
-            'intervals': {
-                'current_weather': 3600,
-                'air_quality': 7200
-            },
-            'field_selection': {
-                'complexity_level': complexity
-            }
-        }
+        # Ensure OpenWeatherService section exists
+        if 'OpenWeatherService' not in config_dict:
+            config_dict['OpenWeatherService'] = configobj.Section(config_dict, [], config_dict, name='OpenWeatherService')
         
-        # If custom selection, store field lists as simple comma-separated strings
-        if complexity == 'custom' and selected_fields:
+        service_config = config_dict['OpenWeatherService']
+        
+        # Basic configuration
+        service_config['enable'] = True
+        service_config['api_key'] = api_key
+        service_config['timeout'] = 30
+        service_config['log_success'] = False
+        service_config['log_errors'] = True
+        
+        # Module configuration
+        if 'modules' not in service_config:
+            service_config['modules'] = configobj.Section(service_config, [], service_config, name='modules')
+        
+        service_config['modules']['current_weather'] = modules.get('current_weather', True)
+        service_config['modules']['air_quality'] = modules.get('air_quality', True)
+        
+        # Interval configuration
+        if 'intervals' not in service_config:
+            service_config['intervals'] = configobj.Section(service_config, [], service_config, name='intervals')
+        
+        service_config['intervals']['current_weather'] = 3600
+        service_config['intervals']['air_quality'] = 7200
+        
+        # Field selection configuration
+        if 'field_selection' not in service_config:
+            service_config['field_selection'] = configobj.Section(service_config, [], service_config, name='field_selection')
+        
+        field_config = service_config['field_selection']
+        
+        if complexity != 'custom':
+            field_config['complexity_level'] = complexity
+        else:
+            field_config['complexity_level'] = 'custom'
+            
+            # Add custom field selections
             for module, fields in selected_fields.items():
-                config_dict['OpenWeatherService']['field_selection'][f'{module}_fields'] = ','.join(fields)
+                if module not in field_config:
+                    field_config[module] = configobj.Section(field_config, [], field_config, name=module)
+                
+                module_config = field_config[module]
+                
+                # Clear existing fields
+                for key in list(module_config.keys()):
+                    del module_config[key]
+                
+                # Add selected fields
+                for field in fields:
+                    module_config[field] = True
     
     def _setup_unit_system(self):
         """Setup unit system extensions for OpenWeather data."""
@@ -845,12 +848,6 @@ class OpenWeatherInstaller(ExtensionInstaller):
         # Add label for concentration
         if 'microgram_per_meter_cubed' not in weewx.units.default_unit_label_dict:
             weewx.units.default_unit_label_dict['microgram_per_meter_cubed'] = ' μg/m³'
-
-
-# WeeWX Extension Installer Entry Point
-def loader():
-    """Extension installer loader function - returns installer instance."""
-    return OpenWeatherInstaller()
 
 
 if __name__ == '__main__':
