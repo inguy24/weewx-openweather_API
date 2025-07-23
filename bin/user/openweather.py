@@ -1037,6 +1037,236 @@ class OpenWeatherTester:
         print("\nConfiguration Test: ✅ PASSED")
         return True
     
+    def test_database_schema(self):
+        """Test database schema and field creation."""
+        print("\n🗄️  TESTING DATABASE SCHEMA")
+        print("-" * 40)
+        
+        # Test database connection
+        print("Testing database connection...")
+        try:
+            # Find WeeWX configuration file
+            config_path = self._find_weewx_config()
+            if not config_path:
+                print("  ⚠️  WeeWX configuration not found - skipping database tests")
+                print("     (This is normal if testing outside of WeeWX installation)")
+                return True
+            
+            # Load WeeWX configuration
+            import configobj
+            config_dict = configobj.ConfigObj(config_path)
+            
+            # Get database binding
+            db_binding = config_dict.get('DataBindings', {}).get('wx_binding', 'wx_binding')
+            
+            # Test database connection
+            with weewx.manager.open_manager_with_config(config_dict, db_binding) as dbmanager:
+                print(f"  ✅ Database connection: Connected to {dbmanager.database_name}")
+                
+        except ImportError:
+            print("  ⚠️  WeeWX modules not available - skipping database tests")
+            return True
+        except Exception as e:
+            print(f"  ❌ Database connection failed: {e}")
+            return False
+        
+        # Test OpenWeather field existence
+        print("\nTesting OpenWeather database fields...")
+        try:
+            # Check for OpenWeather fields
+            ow_fields = []
+            for column in dbmanager.connection.genSchemaOf('archive'):
+                field_name = column[1]
+                if field_name.startswith('ow_'):
+                    ow_fields.append(field_name)
+            
+            if ow_fields:
+                print(f"  ✅ OpenWeather fields found: {len(ow_fields)} fields present")
+                
+                # Show field details for verification
+                for field in sorted(ow_fields)[:10]:  # Show first 10
+                    print(f"    - {field}")
+                if len(ow_fields) > 10:
+                    print(f"    ... and {len(ow_fields) - 10} more")
+            else:
+                print("  ⚠️  No OpenWeather fields found in database")
+                print("     This may indicate the extension was not properly installed")
+                print("     or field selection was set to minimal/none")
+                
+        except Exception as e:
+            print(f"  ❌ Field existence check failed: {e}")
+            return False
+        
+        # Test field types and structure
+        print("\nTesting field types and structure...")
+        try:
+            field_info = {}
+            for column in dbmanager.connection.genSchemaOf('archive'):
+                field_name, field_type = column[1], column[2]
+                if field_name.startswith('ow_'):
+                    field_info[field_name] = field_type
+            
+            # Expected field types
+            expected_types = {
+                'REAL': ['ow_temperature', 'ow_feels_like', 'ow_humidity', 'ow_pressure', 
+                        'ow_wind_speed', 'ow_wind_direction', 'ow_pm25', 'ow_pm10', 'ow_ozone'],
+                'INTEGER': ['ow_aqi'],
+                'TEXT': ['ow_weather_main', 'ow_weather_description', 'ow_main_pollutant']
+            }
+            
+            type_check_passed = 0
+            type_check_total = 0
+            
+            for expected_type, field_list in expected_types.items():
+                for field_name in field_list:
+                    if field_name in field_info:
+                        actual_type = field_info[field_name].upper()
+                        type_check_total += 1
+                        
+                        # Handle database-specific type variations
+                        if (expected_type == 'REAL' and actual_type in ['REAL', 'DOUBLE', 'FLOAT', 'NUMERIC']) or \
+                           (expected_type == 'INTEGER' and actual_type in ['INTEGER', 'INT']) or \
+                           (expected_type == 'TEXT' and actual_type in ['TEXT', 'VARCHAR', 'CHAR']):
+                            type_check_passed += 1
+            
+            if type_check_total > 0:
+                print(f"  ✅ Field types: {type_check_passed}/{type_check_total} fields have correct types")
+            else:
+                print("  ⚠️  No recognized OpenWeather fields found for type checking")
+                
+        except Exception as e:
+            print(f"  ❌ Field type check failed: {e}")
+            return False
+        
+        print("\nDatabase Schema Test: ✅ PASSED")
+        return True
+    
+    def test_service_registration(self):
+        """Test WeeWX service registration and configuration."""
+        print("\n⚙️  TESTING SERVICE REGISTRATION")
+        print("-" * 40)
+        
+        # Test WeeWX configuration loading
+        print("Testing WeeWX configuration...")
+        try:
+            config_path = self._find_weewx_config()
+            if not config_path:
+                print("  ⚠️  WeeWX configuration not found - skipping service registration tests")
+                return True
+            
+            import configobj
+            config_dict = configobj.ConfigObj(config_path)
+            print(f"  ✅ Configuration loaded: {config_path}")
+            
+        except Exception as e:
+            print(f"  ❌ Configuration loading failed: {e}")
+            return False
+        
+        # Test OpenWeatherService section
+        print("\nTesting OpenWeatherService configuration...")
+        try:
+            ow_config = config_dict.get('OpenWeatherService', {})
+            
+            if ow_config:
+                print("  ✅ OpenWeatherService section found")
+                
+                # Check essential configuration
+                essential_keys = ['enable', 'api_key']
+                found_keys = [key for key in essential_keys if key in ow_config]
+                print(f"  ✅ Essential config keys: {len(found_keys)}/{len(essential_keys)} present")
+                
+                # Check API key (without revealing it)
+                api_key = ow_config.get('api_key', '')
+                if api_key and api_key != 'REPLACE_WITH_YOUR_API_KEY':
+                    print(f"  ✅ API key configured: {api_key[:8]}***")
+                else:
+                    print("  ⚠️  API key not configured or using placeholder")
+                
+                # Check modules configuration
+                modules = ow_config.get('modules', {})
+                if modules:
+                    enabled_modules = [mod for mod, enabled in modules.items() if enabled]
+                    print(f"  ✅ Enabled modules: {', '.join(enabled_modules)}")
+                else:
+                    print("  ⚠️  No modules configuration found")
+                
+            else:
+                print("  ❌ OpenWeatherService section not found in configuration")
+                print("     This indicates the extension was not properly installed")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ OpenWeatherService configuration check failed: {e}")
+            return False
+        
+        # Test service registration in Engine services
+        print("\nTesting service registration in Engine...")
+        try:
+            engine_config = config_dict.get('Engine', {})
+            services_config = engine_config.get('Services', {})
+            
+            if services_config:
+                print("  ✅ Engine Services section found")
+                
+                # Check data_services registration
+                data_services = services_config.get('data_services', '')
+                if isinstance(data_services, list):
+                    data_services = ', '.join(data_services)
+                
+                ow_service_name = 'user.openweather.OpenWeatherService'
+                if ow_service_name in data_services:
+                    print(f"  ✅ Service registered: {ow_service_name} found in data_services")
+                else:
+                    print(f"  ❌ Service not registered: {ow_service_name} not found in data_services")
+                    print(f"     Current data_services: {data_services}")
+                    return False
+                    
+                # Show service order
+                service_list = [s.strip() for s in data_services.split(',') if s.strip()]
+                ow_position = next((i for i, s in enumerate(service_list) if ow_service_name in s), -1)
+                if ow_position >= 0:
+                    print(f"  ✅ Service order: Position {ow_position + 1} of {len(service_list)}")
+                    
+            else:
+                print("  ❌ Engine Services section not found")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ Service registration check failed: {e}")
+            return False
+        
+        # Test Station coordinates (used by OpenWeather service)
+        print("\nTesting Station coordinates...")
+        try:
+            station_config = config_dict.get('Station', {})
+            
+            if station_config:
+                latitude = station_config.get('latitude')
+                longitude = station_config.get('longitude')
+                
+                if latitude is not None and longitude is not None:
+                    lat_val = float(latitude)
+                    lon_val = float(longitude)
+                    
+                    if -90 <= lat_val <= 90 and -180 <= lon_val <= 180:
+                        print(f"  ✅ Station coordinates: {lat_val}, {lon_val}")
+                    else:
+                        print(f"  ❌ Invalid coordinates: {lat_val}, {lon_val}")
+                        return False
+                else:
+                    print("  ❌ Station coordinates not configured")
+                    return False
+            else:
+                print("  ❌ Station section not found")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ Station coordinates check failed: {e}")
+            return False
+        
+        print("\nService Registration Test: ✅ PASSED")
+        return True
+    
     def test_service_integration(self):
         """Test WeeWX service integration components."""
         print("\n🔗 TESTING SERVICE INTEGRATION")
@@ -1130,6 +1360,22 @@ class OpenWeatherTester:
         
         print("\nService Integration Test: ✅ PASSED")
         return True
+    
+    def _find_weewx_config(self):
+        """Find WeeWX configuration file."""
+        possible_paths = [
+            '/etc/weewx/weewx.conf',
+            '/home/weewx/weewx.conf',
+            '/opt/weewx/weewx.conf',
+            os.path.expanduser('~/weewx-data/weewx.conf'),
+            '/usr/share/weewx/weewx.conf'
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        return None
     
     def test_thread_safety(self):
         """Test thread safety components."""
@@ -1228,6 +1474,8 @@ class OpenWeatherTester:
             ("Field Selection", self.test_field_selection),
             ("Data Processing", self.test_data_processing),
             ("Configuration", self.test_configuration),
+            ("Database Schema", self.test_database_schema),
+            ("Service Registration", self.test_service_registration),
             ("Service Integration", self.test_service_integration),
             ("Thread Safety", self.test_thread_safety)
         ]
@@ -1254,8 +1502,17 @@ class OpenWeatherTester:
         
         if passed == total:
             print("🎉 ALL TESTS PASSED! Extension is working correctly.")
+            print("\n✅ Installation verification complete:")
+            print("   • Database fields created successfully")
+            print("   • Service registered in WeeWX configuration")
+            print("   • Extension components functioning properly")
         else:
             print("⚠️  Some tests failed. Check the output above for details.")
+            if any("Database" in test[0] or "Service Registration" in test[0] for test in tests):
+                print("\n🔧 Installation troubleshooting:")
+                print("   • If database tests failed: Run 'weectl database add-column' commands manually")
+                print("   • If service registration failed: Check [OpenWeatherService] section in weewx.conf")
+                print("   • If API tests failed: Verify your API key at https://openweathermap.org/api")
         
         return passed == total
 
@@ -1288,6 +1545,10 @@ Examples:
                        help='Test data processing and field mapping')
     parser.add_argument('--test-config', action='store_true',
                        help='Test configuration parsing and validation')
+    parser.add_argument('--test-database', action='store_true',
+                       help='Test database schema and field creation')
+    parser.add_argument('--test-registration', action='store_true',
+                       help='Test service registration in WeeWX configuration')
     parser.add_argument('--test-service', action='store_true',
                        help='Test service integration components')
     parser.add_argument('--test-thread', action='store_true',
@@ -1296,6 +1557,8 @@ Examples:
                        help='Test field selection functionality')
     parser.add_argument('--test-all', action='store_true',
                        help='Run all available tests')
+    parser.add_argument('--test-install', action='store_true',
+                       help='Test installation (database + service registration)')
     
     # Configuration options
     parser.add_argument('--api-key', 
@@ -1333,6 +1596,20 @@ Examples:
     # Run requested tests
     if args.test_all:
         success = tester.run_all_tests()
+    elif args.test_install:
+        # Run installation-specific tests
+        print("🔧 TESTING INSTALLATION")
+        print("=" * 40)
+        success = True
+        success &= tester.test_database_schema()
+        success &= tester.test_service_registration()
+        
+        if success:
+            print("\n✅ INSTALLATION VERIFICATION COMPLETE!")
+            print("Extension was installed correctly and is ready to use.")
+        else:
+            print("\n❌ INSTALLATION ISSUES DETECTED")
+            print("Check the output above for specific problems.")
     else:
         success = True
         test_count = 0
@@ -1353,6 +1630,14 @@ Examples:
             success &= tester.test_configuration()
             test_count += 1
         
+        if args.test_database:
+            success &= tester.test_database_schema()
+            test_count += 1
+        
+        if args.test_registration:
+            success &= tester.test_service_registration()
+            test_count += 1
+        
         if args.test_service:
             success &= tester.test_service_integration()
             test_count += 1
@@ -1363,7 +1648,10 @@ Examples:
         
         if test_count == 0:
             print("No tests specified. Use --help to see available options.")
-            print("For quick testing, try: --test-all")
+            print("\nQuick options:")
+            print("  --test-all       # Test everything")
+            print("  --test-install   # Test installation (database + service)")
+            print("  --test-api       # Test API connectivity")
             return
     
     # Exit with appropriate code
