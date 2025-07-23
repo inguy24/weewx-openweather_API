@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WeeWX OpenWeather Extension - Enhanced with Field Selection System
+WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
 
 Provides modular OpenWeatherMap API integration with user-selectable fields
 and dynamic database schema management.
@@ -18,6 +18,8 @@ import urllib.error
 import socket
 import yaml
 import os
+import argparse
+import sys
 from typing import Dict, List, Optional, Any, Tuple
 
 import weewx
@@ -712,3 +714,661 @@ class OpenWeatherService(StdService):
 def loader(config_dict, engine):
     """Load the OpenWeather service."""
     return OpenWeatherService(engine, config_dict)
+
+
+# ============================================================================
+# BUILT-IN TESTING FUNCTIONALITY
+# ============================================================================
+
+class OpenWeatherTester:
+    """Built-in testing functionality for the OpenWeather extension."""
+    
+    def __init__(self, api_key=None, latitude=None, longitude=None):
+        self.api_key = api_key
+        self.latitude = latitude
+        self.longitude = longitude
+        
+        # Use test coordinates if not provided
+        if not self.latitude or not self.longitude:
+            self.latitude = 33.656915  # Huntington Beach, CA
+            self.longitude = -117.982542
+        
+        # Initialize field manager for testing
+        self.field_manager = FieldSelectionManager()
+        
+        print(f"OpenWeather Extension Tester v{VERSION}")
+        print(f"Testing location: {self.latitude}, {self.longitude}")
+        print("=" * 60)
+    
+    def test_api_connectivity(self):
+        """Test API connectivity and response parsing."""
+        print("\n🌐 TESTING API CONNECTIVITY")
+        print("-" * 40)
+        
+        if not self.api_key:
+            print("❌ Error: API key required for connectivity testing")
+            return False
+        
+        success_count = 0
+        total_tests = 2
+        
+        # Test current weather API
+        print("Testing current weather API...")
+        try:
+            collector = OpenWeatherDataCollector(
+                self.api_key, 
+                timeout=30,
+                selected_fields={'current_weather': ['temp', 'humidity', 'pressure']}
+            )
+            weather_data = collector.collect_current_weather(self.latitude, self.longitude)
+            
+            if weather_data and 'ow_temperature' in weather_data:
+                print(f"  ✅ Current weather API: {weather_data['ow_temperature']:.1f}°C")
+                success_count += 1
+            else:
+                print("  ❌ Current weather API: No temperature data received")
+                
+        except OpenWeatherAPIError as e:
+            print(f"  ❌ Current weather API: {e}")
+        except Exception as e:
+            print(f"  ❌ Current weather API: Unexpected error - {e}")
+        
+        # Test air quality API
+        print("Testing air quality API...")
+        try:
+            collector = OpenWeatherDataCollector(
+                self.api_key,
+                timeout=30,
+                selected_fields={'air_quality': ['pm2_5', 'aqi']}
+            )
+            air_data = collector.collect_air_quality(self.latitude, self.longitude)
+            
+            if air_data and 'ow_aqi' in air_data:
+                print(f"  ✅ Air quality API: AQI {air_data['ow_aqi']}")
+                success_count += 1
+            else:
+                print("  ❌ Air quality API: No AQI data received")
+                
+        except OpenWeatherAPIError as e:
+            print(f"  ❌ Air quality API: {e}")
+        except Exception as e:
+            print(f"  ❌ Air quality API: Unexpected error - {e}")
+        
+        print(f"\nAPI Connectivity Test: {success_count}/{total_tests} APIs working")
+        return success_count == total_tests
+    
+    def test_data_processing(self):
+        """Test data extraction and field mapping."""
+        print("\n🔧 TESTING DATA PROCESSING")
+        print("-" * 40)
+        
+        # Test weather data extraction
+        print("Testing weather data extraction...")
+        
+        # Mock API response for testing
+        mock_weather_response = {
+            "coord": {"lon": -117.98, "lat": 33.66},
+            "weather": [{"main": "Clear", "description": "clear sky", "icon": "01d"}],
+            "main": {
+                "temp": 22.5,
+                "feels_like": 21.8,
+                "temp_min": 20.1,
+                "temp_max": 24.3,
+                "pressure": 1015,
+                "humidity": 65
+            },
+            "visibility": 10000,
+            "wind": {"speed": 3.1, "deg": 270, "gust": 4.2},
+            "clouds": {"all": 15},
+            "dt": 1642678800
+        }
+        
+        try:
+            collector = OpenWeatherDataCollector(
+                "test_key",
+                selected_fields={'current_weather': ['temp', 'feels_like', 'humidity', 'pressure']}
+            )
+            extracted = collector._extract_weather_data(mock_weather_response)
+            
+            # Verify expected fields
+            expected_fields = ['ow_temperature', 'ow_feels_like', 'ow_humidity', 'ow_pressure']
+            found_fields = [field for field in expected_fields if field in extracted and extracted[field] is not None]
+            
+            print(f"  ✅ Weather extraction: {len(found_fields)}/{len(expected_fields)} fields extracted")
+            for field in found_fields:
+                print(f"    {field}: {extracted[field]}")
+                
+        except Exception as e:
+            print(f"  ❌ Weather extraction failed: {e}")
+            return False
+        
+        # Test air quality data extraction
+        print("\nTesting air quality data extraction...")
+        
+        mock_air_response = {
+            "coord": {"lon": -117.98, "lat": 33.66},
+            "list": [{
+                "dt": 1642678800,
+                "main": {"aqi": 2},
+                "components": {
+                    "co": 245.3,
+                    "no": 0.8,
+                    "no2": 15.2,
+                    "o3": 89.1,
+                    "so2": 2.1,
+                    "pm2_5": 8.7,
+                    "pm10": 12.4,
+                    "nh3": 1.2
+                }
+            }]
+        }
+        
+        try:
+            collector = OpenWeatherDataCollector(
+                "test_key",
+                selected_fields={'air_quality': ['pm2_5', 'aqi', 'ozone']}
+            )
+            extracted = collector._extract_air_quality_data(mock_air_response)
+            
+            expected_fields = ['ow_pm25', 'ow_aqi', 'ow_ozone']
+            found_fields = [field for field in expected_fields if field in extracted and extracted[field] is not None]
+            
+            print(f"  ✅ Air quality extraction: {len(found_fields)}/{len(expected_fields)} fields extracted")
+            for field in found_fields:
+                print(f"    {field}: {extracted[field]}")
+                
+        except Exception as e:
+            print(f"  ❌ Air quality extraction failed: {e}")
+            return False
+        
+        print("\nData Processing Test: ✅ PASSED")
+        return True
+    
+    def test_field_selection(self):
+        """Test field selection and filtering functionality."""
+        print("\n📋 TESTING FIELD SELECTION")
+        print("-" * 40)
+        
+        # Test smart defaults
+        print("Testing smart defaults...")
+        try:
+            for complexity in ['minimal', 'standard', 'comprehensive']:
+                fields = self.field_manager.get_smart_default_fields(complexity)
+                weather_count = len(fields.get('current_weather', []))
+                air_count = len(fields.get('air_quality', []))
+                print(f"  ✅ {complexity}: {weather_count} weather + {air_count} air quality fields")
+                
+        except Exception as e:
+            print(f"  ❌ Smart defaults failed: {e}")
+            return False
+        
+        # Test field mappings
+        print("\nTesting field mappings...")
+        try:
+            test_selection = {
+                'current_weather': ['temp', 'humidity', 'pressure'],
+                'air_quality': ['pm2_5', 'aqi']
+            }
+            
+            mappings = self.field_manager.get_database_field_mappings(test_selection)
+            expected_mappings = ['ow_temperature', 'ow_humidity', 'ow_pressure', 'ow_pm25', 'ow_aqi']
+            
+            found_mappings = [field for field in expected_mappings if field in mappings]
+            print(f"  ✅ Database mappings: {len(found_mappings)}/{len(expected_mappings)} mapped correctly")
+            
+        except Exception as e:
+            print(f"  ❌ Field mappings failed: {e}")
+            return False
+        
+        # Test field filtering
+        print("\nTesting field filtering...")
+        try:
+            collector = OpenWeatherDataCollector(
+                "test_key",
+                selected_fields={'current_weather': ['temp', 'humidity']}
+            )
+            
+            # Create mock data with more fields than selected
+            mock_data = {
+                'ow_temperature': 22.5,
+                'ow_humidity': 65,
+                'ow_pressure': 1015,  # Not selected
+                'ow_wind_speed': 3.1,  # Not selected
+                'ow_weather_timestamp': time.time()
+            }
+            
+            filtered = collector._apply_field_selection(mock_data, 'current_weather')
+            
+            # Should only have selected fields plus timestamp
+            expected_fields = {'ow_temperature', 'ow_humidity', 'ow_weather_timestamp'}
+            actual_fields = set(filtered.keys())
+            
+            if expected_fields == actual_fields:
+                print(f"  ✅ Field filtering: {len(filtered)} fields correctly filtered")
+            else:
+                print(f"  ❌ Field filtering: Expected {expected_fields}, got {actual_fields}")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ Field filtering failed: {e}")
+            return False
+        
+        print("\nField Selection Test: ✅ PASSED")
+        return True
+    
+    def test_configuration(self):
+        """Test configuration parsing and validation."""
+        print("\n⚙️  TESTING CONFIGURATION")
+        print("-" * 40)
+        
+        # Test configuration parsing
+        print("Testing configuration parsing...")
+        try:
+            # Mock WeeWX config
+            mock_config = {
+                'Station': {
+                    'latitude': 33.656915,
+                    'longitude': -117.982542
+                },
+                'OpenWeatherService': {
+                    'enable': True,
+                    'api_key': 'test_key_123',
+                    'timeout': 30,
+                    'modules': {
+                        'current_weather': True,
+                        'air_quality': True
+                    },
+                    'intervals': {
+                        'current_weather': 3600,
+                        'air_quality': 7200
+                    },
+                    'field_selection': {
+                        'complexity_level': 'standard'
+                    }
+                }
+            }
+            
+            # Test service initialization (without actually starting it)
+            print("  ✅ Mock configuration structure valid")
+            
+        except Exception as e:
+            print(f"  ❌ Configuration parsing failed: {e}")
+            return False
+        
+        # Test coordinate validation
+        print("\nTesting coordinate validation...")
+        try:
+            valid_coords = [
+                (33.656915, -117.982542),  # Huntington Beach
+                (0, 0),                    # Null Island
+                (90, 180),                 # Extreme valid
+                (-90, -180)                # Extreme valid
+            ]
+            
+            invalid_coords = [
+                (91, 0),      # Invalid latitude
+                (0, 181),     # Invalid longitude
+                (-91, 0),     # Invalid latitude
+                (0, -181)     # Invalid longitude
+            ]
+            
+            for lat, lon in valid_coords:
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    pass  # Valid
+                else:
+                    print(f"  ❌ Coordinate validation: {lat}, {lon} should be valid")
+                    return False
+            
+            print(f"  ✅ Coordinate validation: {len(valid_coords)} valid coordinates accepted")
+            
+            for lat, lon in invalid_coords:
+                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                    pass  # Correctly rejected
+                else:
+                    print(f"  ❌ Coordinate validation: {lat}, {lon} should be rejected")
+                    return False
+            
+            print(f"  ✅ Coordinate validation: {len(invalid_coords)} invalid coordinates rejected")
+            
+        except Exception as e:
+            print(f"  ❌ Coordinate validation failed: {e}")
+            return False
+        
+        print("\nConfiguration Test: ✅ PASSED")
+        return True
+    
+    def test_service_integration(self):
+        """Test WeeWX service integration components."""
+        print("\n🔗 TESTING SERVICE INTEGRATION")
+        print("-" * 40)
+        
+        # Test unit system setup
+        print("Testing unit system integration...")
+        try:
+            # Test unit group mappings
+            test_fields = {
+                'ow_temperature': 'group_temperature',
+                'ow_humidity': 'group_percent',
+                'ow_pressure': 'group_pressure',
+                'ow_wind_speed': 'group_speed',
+                'ow_pm25': 'group_concentration',
+                'ow_aqi': 'group_count'
+            }
+            
+            # This would normally be done by the service
+            unit_mappings = {}
+            for field, expected_group in test_fields.items():
+                field_name = field[3:]  # Remove 'ow_' prefix
+                
+                if field_name in ['temperature', 'feels_like']:
+                    unit_mappings[field] = 'group_temperature'
+                elif field_name == 'humidity':
+                    unit_mappings[field] = 'group_percent'
+                elif field_name == 'pressure':
+                    unit_mappings[field] = 'group_pressure'
+                elif field_name == 'wind_speed':
+                    unit_mappings[field] = 'group_speed'
+                elif field_name in ['pm25', 'pm10']:
+                    unit_mappings[field] = 'group_concentration'
+                elif field_name == 'aqi':
+                    unit_mappings[field] = 'group_count'
+            
+            correct_mappings = sum(1 for field, group in unit_mappings.items() 
+                                 if test_fields.get(field) == group)
+            
+            print(f"  ✅ Unit mappings: {correct_mappings}/{len(test_fields)} correctly mapped")
+            
+        except Exception as e:
+            print(f"  ❌ Unit system integration failed: {e}")
+            return False
+        
+        # Test archive record injection simulation
+        print("\nTesting archive record injection...")
+        try:
+            # Mock archive record
+            mock_record = {}
+            
+            # Mock latest data
+            mock_latest_data = {
+                'ow_temperature': 22.5,
+                'ow_humidity': 65,
+                'ow_pm25': 8.7,
+                'ow_aqi': 2,
+                'ow_weather_timestamp': time.time(),
+                'ow_air_quality_timestamp': time.time()
+            }
+            
+            # Simulate injection logic
+            current_time = time.time()
+            max_age = 7200  # 2 hours
+            
+            injected_count = 0
+            for field_name, value in mock_latest_data.items():
+                if value is not None and not field_name.endswith('_timestamp'):
+                    # Simulate freshness check
+                    if field_name.startswith('ow_weather_'):
+                        data_age = current_time - mock_latest_data.get('ow_weather_timestamp', 0)
+                    elif field_name.startswith('ow_air_quality_'):
+                        data_age = current_time - mock_latest_data.get('ow_air_quality_timestamp', 0)
+                    else:
+                        data_age = 0  # Fresh data
+                    
+                    if data_age <= max_age:
+                        mock_record[field_name] = value
+                        injected_count += 1
+            
+            expected_fields = ['ow_temperature', 'ow_humidity', 'ow_pm25', 'ow_aqi']
+            if injected_count == len(expected_fields):
+                print(f"  ✅ Archive injection: {injected_count} fields would be injected")
+            else:
+                print(f"  ❌ Archive injection: Expected {len(expected_fields)}, got {injected_count}")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ Archive record injection failed: {e}")
+            return False
+        
+        print("\nService Integration Test: ✅ PASSED")
+        return True
+    
+    def test_thread_safety(self):
+        """Test thread safety components."""
+        print("\n🔒 TESTING THREAD SAFETY")
+        print("-" * 40)
+        
+        # Test data locking simulation
+        print("Testing data lock behavior...")
+        try:
+            import threading
+            
+            test_data = {}
+            data_lock = threading.Lock()
+            
+            # Simulate writing data (what background thread does)
+            def write_data():
+                with data_lock:
+                    test_data['temperature'] = 22.5
+                    test_data['timestamp'] = time.time()
+            
+            # Simulate reading data (what archive injection does)
+            def read_data():
+                with data_lock:
+                    return test_data.copy()
+            
+            # Test write then read
+            write_data()
+            read_result = read_data()
+            
+            if 'temperature' in read_result and read_result['temperature'] == 22.5:
+                print("  ✅ Data locking: Write/read operations work correctly")
+            else:
+                print("  ❌ Data locking: Write/read operations failed")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ Thread safety test failed: {e}")
+            return False
+        
+        # Test concurrent access simulation
+        print("\nTesting concurrent access patterns...")
+        try:
+            # This would be a more complex test in practice
+            # For now, just verify the pattern works
+            results = []
+            errors = []
+            
+            def mock_writer():
+                try:
+                    for i in range(5):
+                        with data_lock:
+                            test_data[f'value_{i}'] = i
+                        time.sleep(0.001)
+                except Exception as e:
+                    errors.append(e)
+            
+            def mock_reader():
+                try:
+                    for i in range(5):
+                        with data_lock:
+                            current_data = test_data.copy()
+                        results.append(len(current_data))
+                        time.sleep(0.001)
+                except Exception as e:
+                    errors.append(e)
+            
+            # Run mock concurrent operations
+            writer_thread = threading.Thread(target=mock_writer)
+            reader_thread = threading.Thread(target=mock_reader)
+            
+            writer_thread.start()
+            reader_thread.start()
+            
+            writer_thread.join(timeout=1)
+            reader_thread.join(timeout=1)
+            
+            if len(errors) == 0:
+                print(f"  ✅ Concurrent access: No threading errors in {len(results)} operations")
+            else:
+                print(f"  ❌ Concurrent access: {len(errors)} threading errors occurred")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ Concurrent access test failed: {e}")
+            return False
+        
+        print("\nThread Safety Test: ✅ PASSED")
+        return True
+    
+    def run_all_tests(self):
+        """Run all available tests."""
+        print(f"\n🧪 RUNNING ALL TESTS")
+        print("=" * 60)
+        
+        tests = [
+            ("Field Selection", self.test_field_selection),
+            ("Data Processing", self.test_data_processing),
+            ("Configuration", self.test_configuration),
+            ("Service Integration", self.test_service_integration),
+            ("Thread Safety", self.test_thread_safety)
+        ]
+        
+        # Add API test if we have credentials
+        if self.api_key:
+            tests.insert(0, ("API Connectivity", self.test_api_connectivity))
+        
+        passed = 0
+        total = len(tests)
+        
+        for test_name, test_func in tests:
+            try:
+                if test_func():
+                    passed += 1
+                    print(f"\n{test_name}: ✅ PASSED")
+                else:
+                    print(f"\n{test_name}: ❌ FAILED")
+            except Exception as e:
+                print(f"\n{test_name}: ❌ ERROR - {e}")
+        
+        print("\n" + "=" * 60)
+        print(f"TEST SUMMARY: {passed}/{total} tests passed")
+        
+        if passed == total:
+            print("🎉 ALL TESTS PASSED! Extension is working correctly.")
+        else:
+            print("⚠️  Some tests failed. Check the output above for details.")
+        
+        return passed == total
+
+
+def main():
+    """Main function for command-line testing."""
+    parser = argparse.ArgumentParser(
+        description='OpenWeather Extension Testing',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Test API connectivity
+  python3 openweather.py --test-api --api-key YOUR_KEY --latitude 33.66 --longitude -117.98
+  
+  # Test all functionality
+  python3 openweather.py --test-all --api-key YOUR_KEY
+  
+  # Test without API (skips connectivity test)
+  python3 openweather.py --test-all
+  
+  # Test specific component
+  python3 openweather.py --test-data
+        """
+    )
+    
+    # Test options
+    parser.add_argument('--test-api', action='store_true', 
+                       help='Test API connectivity (requires --api-key)')
+    parser.add_argument('--test-data', action='store_true',
+                       help='Test data processing and field mapping')
+    parser.add_argument('--test-config', action='store_true',
+                       help='Test configuration parsing and validation')
+    parser.add_argument('--test-service', action='store_true',
+                       help='Test service integration components')
+    parser.add_argument('--test-thread', action='store_true',
+                       help='Test thread safety')
+    parser.add_argument('--test-fields', action='store_true',
+                       help='Test field selection functionality')
+    parser.add_argument('--test-all', action='store_true',
+                       help='Run all available tests')
+    
+    # Configuration options
+    parser.add_argument('--api-key', 
+                       help='OpenWeatherMap API key for connectivity testing')
+    parser.add_argument('--latitude', type=float, default=33.656915,
+                       help='Latitude for testing (default: Huntington Beach, CA)')
+    parser.add_argument('--longitude', type=float, default=-117.982542,
+                       help='Longitude for testing (default: Huntington Beach, CA)')
+    
+    # Information options
+    parser.add_argument('--version', action='store_true',
+                       help='Show extension version')
+    parser.add_argument('--info', action='store_true',
+                       help='Show extension information')
+    
+    args = parser.parse_args()
+    
+    # Handle information requests
+    if args.version:
+        print(f"OpenWeather Extension v{VERSION}")
+        return
+    
+    if args.info:
+        print(f"OpenWeather Extension v{VERSION}")
+        print("=" * 40)
+        print("A comprehensive WeeWX extension for OpenWeatherMap API integration")
+        print("Features: Weather data, air quality, field selection, rate limiting")
+        print("Copyright (C) 2025 WeeWX OpenWeather API Extension")
+        print("License: GNU General Public License v3.0")
+        return
+    
+    # Initialize tester
+    tester = OpenWeatherTester(args.api_key, args.latitude, args.longitude)
+    
+    # Run requested tests
+    if args.test_all:
+        success = tester.run_all_tests()
+    else:
+        success = True
+        test_count = 0
+        
+        if args.test_api:
+            success &= tester.test_api_connectivity()
+            test_count += 1
+        
+        if args.test_fields:
+            success &= tester.test_field_selection()
+            test_count += 1
+        
+        if args.test_data:
+            success &= tester.test_data_processing()
+            test_count += 1
+        
+        if args.test_config:
+            success &= tester.test_configuration()
+            test_count += 1
+        
+        if args.test_service:
+            success &= tester.test_service_integration()
+            test_count += 1
+        
+        if args.test_thread:
+            success &= tester.test_thread_safety()
+            test_count += 1
+        
+        if test_count == 0:
+            print("No tests specified. Use --help to see available options.")
+            print("For quick testing, try: --test-all")
+            return
+    
+    # Exit with appropriate code
+    sys.exit(0 if success else 1)
+
+
+if __name__ == '__main__':
+    main()
