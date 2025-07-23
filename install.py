@@ -84,7 +84,7 @@ class TerminalUI:
                 sys.exit(1)
     
     def show_custom_selection(self, field_definitions):
-        """Show tab-selectable checklist for custom field selection using curses."""
+        """Show single-screen checklist for custom field selection using curses."""
         import curses
         
         def curses_main(stdscr):
@@ -96,116 +96,143 @@ class TerminalUI:
                 curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)  # Highlight
                 curses.init_pair(2, curses.COLOR_GREEN, -1)  # Selected
                 curses.init_pair(3, curses.COLOR_BLUE, -1)   # Header
+                curses.init_pair(4, curses.COLOR_CYAN, -1)   # Module headers
             
-            # Organize fields for display
-            modules = {}
+            # Organize all fields into a single list
+            all_fields = []
+            field_to_module = {}
+            
             for module_name, module_data in field_definitions.items():
-                modules[module_name] = {
-                    'display_name': module_name.upper().replace('_', ' '),
-                    'fields': []
-                }
+                module_display = module_name.upper().replace('_', ' ')
                 
+                # Add module header
+                all_fields.append({
+                    'type': 'module_header',
+                    'display': f"=== {module_display} ===",
+                    'module': module_name
+                })
+                
+                current_category = ""
                 for category_name, category_data in module_data['categories'].items():
                     for field_name, field_info in category_data['fields'].items():
-                        modules[module_name]['fields'].append({
+                        # Add category header if new
+                        if category_data['display_name'] != current_category:
+                            current_category = category_data['display_name']
+                            all_fields.append({
+                                'type': 'category_header',
+                                'display': current_category,
+                                'module': module_name
+                            })
+                        
+                        # Add field
+                        field_item = {
+                            'type': 'field',
                             'name': field_name,
                             'display': field_info['display_name'],
-                            'category': category_data['display_name'],
+                            'module': module_name,
                             'selected': False
-                        })
+                        }
+                        all_fields.append(field_item)
+                        field_to_module[len(all_fields) - 1] = module_name
             
             # State variables
-            current_module = 0
-            current_field = 0
-            module_names = list(modules.keys())
+            current_item = 0
+            scroll_offset = 0
+            
+            # Find first selectable field
+            while current_item < len(all_fields) and all_fields[current_item]['type'] != 'field':
+                current_item += 1
             
             def draw_interface():
                 stdscr.clear()
                 height, width = stdscr.getmaxyx()
                 
                 # Title
-                title = "CUSTOM FIELD SELECTION"
+                title = "CUSTOM FIELD SELECTION - Select All Desired Fields"
                 stdscr.addstr(0, (width - len(title)) // 2, title, curses.color_pair(3) | curses.A_BOLD)
                 
                 # Instructions
-                instructions = "↑↓:Navigate  SPACE:Toggle  TAB:Switch Module  ENTER:Confirm  q:Quit"
+                instructions = "↑↓:Navigate  SPACE:Toggle  ENTER:Confirm  q:Quit"
                 stdscr.addstr(1, (width - len(instructions)) // 2, instructions)
                 stdscr.addstr(2, 0, "─" * width)
                 
-                # Module tabs
-                tab_line = ""
-                for i, module_name in enumerate(module_names):
-                    display_name = modules[module_name]['display_name']
-                    if i == current_module:
-                        tab_line += f"[{display_name}] "
-                    else:
-                        tab_line += f" {display_name}  "
+                # Calculate visible area
+                visible_height = height - 6  # Leave space for title, instructions, summary
                 
-                stdscr.addstr(3, 0, tab_line)
-                stdscr.addstr(4, 0, "─" * width)
+                # Adjust scroll if needed
+                nonlocal scroll_offset
+                if current_item < scroll_offset:
+                    scroll_offset = current_item
+                elif current_item >= scroll_offset + visible_height:
+                    scroll_offset = current_item - visible_height + 1
                 
-                # Current module fields
-                current_module_name = module_names[current_module]
-                fields = modules[current_module_name]['fields']
-                
-                y_pos = 6
-                current_category = ""
-                field_index = 0
-                
-                for field in fields:
-                    if y_pos >= height - 3:  # Leave space for summary
-                        break
-                    
-                    # Category header
-                    if field['category'] != current_category:
-                        current_category = field['category']
-                        if y_pos < height - 1:
-                            stdscr.addstr(y_pos, 2, f"{current_category}:", curses.color_pair(3) | curses.A_BOLD)
-                            y_pos += 1
-                    
+                # Display fields
+                y_pos = 3
+                for i in range(scroll_offset, min(len(all_fields), scroll_offset + visible_height)):
                     if y_pos >= height - 3:
                         break
                     
-                    # Field line
-                    cursor = "→ " if field_index == current_field else "  "
-                    checkbox = "[✓] " if field['selected'] else "[ ] "
-                    text = f"{cursor}{checkbox}{field['display']}"
+                    item = all_fields[i]
                     
-                    # Truncate if too long
-                    if len(text) > width - 4:
-                        text = text[:width - 7] + "..."
+                    if item['type'] == 'module_header':
+                        # Module header
+                        stdscr.addstr(y_pos, 0, item['display'], curses.color_pair(4) | curses.A_BOLD)
                     
-                    # Apply highlighting and colors
-                    attr = 0
-                    if field_index == current_field:
-                        attr |= curses.color_pair(1) | curses.A_REVERSE
-                    if field['selected']:
-                        attr |= curses.color_pair(2)
+                    elif item['type'] == 'category_header':
+                        # Category header
+                        stdscr.addstr(y_pos, 2, f"{item['display']}:", curses.color_pair(3))
                     
-                    stdscr.addstr(y_pos, 4, text, attr)
+                    elif item['type'] == 'field':
+                        # Field item
+                        cursor = "→ " if i == current_item else "  "
+                        checkbox = "[✓] " if item['selected'] else "[ ] "
+                        text = f"{cursor}{checkbox}{item['display']}"
+                        
+                        # Truncate if too long
+                        if len(text) > width - 4:
+                            text = text[:width - 7] + "..."
+                        
+                        # Apply highlighting and colors
+                        attr = 0
+                        if i == current_item:
+                            attr |= curses.color_pair(1) | curses.A_REVERSE
+                        if item['selected']:
+                            attr |= curses.color_pair(2)
+                        
+                        stdscr.addstr(y_pos, 4, text, attr)
+                    
                     y_pos += 1
-                    field_index += 1
                 
                 # Summary at bottom
                 if height > 10:
                     summary_y = height - 3
                     stdscr.addstr(summary_y, 0, "─" * width)
                     
-                    # Count selected fields
-                    total_selected = sum(len([f for f in module['fields'] if f['selected']]) 
-                                       for module in modules.values())
+                    # Count selected fields by module
+                    selected_counts = {}
+                    total_selected = 0
                     
-                    summary_text = f"Total selected: {total_selected} fields"
-                    stdscr.addstr(summary_y + 1, 0, summary_text)
+                    for item in all_fields:
+                        if item['type'] == 'field':
+                            module = item['module']
+                            if module not in selected_counts:
+                                selected_counts[module] = 0
+                            if item['selected']:
+                                selected_counts[module] += 1
+                                total_selected += 1
                     
-                    # Module summaries
-                    module_summary = ""
-                    for module_name, module in modules.items():
-                        selected_count = len([f for f in module['fields'] if f['selected']])
-                        module_summary += f" | {module['display_name']}: {selected_count}"
+                    summary_text = f"Selected: {total_selected} total"
+                    for module, count in selected_counts.items():
+                        module_display = module.replace('_', ' ').title()
+                        summary_text += f" | {module_display}: {count}"
                     
-                    if len(module_summary) < width:
-                        stdscr.addstr(summary_y + 2, 0, module_summary[3:])  # Remove first " | "
+                    if len(summary_text) < width:
+                        stdscr.addstr(summary_y + 1, 0, summary_text)
+                    
+                    # Scroll indicator
+                    if len(all_fields) > visible_height:
+                        scroll_info = f"Line {current_item + 1} of {len(all_fields)}"
+                        stdscr.addstr(summary_y + 2, width - len(scroll_info) - 1, scroll_info)
                 
                 stdscr.refresh()
             
@@ -215,36 +242,37 @@ class TerminalUI:
                     draw_interface()
                     key = stdscr.getch()
                     
-                    current_module_name = module_names[current_module]
-                    fields = modules[current_module_name]['fields']
-                    
                     if key == ord('q') or key == ord('Q'):
                         return None  # User cancelled
                     elif key == 10 or key == 13:  # ENTER
                         break
-                    elif key == 9:  # TAB
-                        current_module = (current_module + 1) % len(module_names)
-                        current_field = 0
                     elif key == curses.KEY_UP:
-                        current_field = max(0, current_field - 1)
+                        # Move to previous selectable item
+                        new_pos = current_item - 1
+                        while new_pos >= 0 and all_fields[new_pos]['type'] != 'field':
+                            new_pos -= 1
+                        if new_pos >= 0:
+                            current_item = new_pos
                     elif key == curses.KEY_DOWN:
-                        current_field = min(len(fields) - 1, current_field + 1)
+                        # Move to next selectable item
+                        new_pos = current_item + 1
+                        while new_pos < len(all_fields) and all_fields[new_pos]['type'] != 'field':
+                            new_pos += 1
+                        if new_pos < len(all_fields):
+                            current_item = new_pos
                     elif key == 32:  # SPACE
-                        if fields and current_field < len(fields):
-                            fields[current_field]['selected'] = not fields[current_field]['selected']
-                    elif key == curses.KEY_BTAB:  # SHIFT+TAB
-                        current_module = (current_module - 1) % len(module_names)
-                        current_field = 0
+                        if (current_item < len(all_fields) and 
+                            all_fields[current_item]['type'] == 'field'):
+                            all_fields[current_item]['selected'] = not all_fields[current_item]['selected']
                         
                 except KeyboardInterrupt:
                     return None
             
             # Convert to expected format
-            selected_fields = {}
-            for module_name, module in modules.items():
-                selected_fields[module_name] = [
-                    field['name'] for field in module['fields'] if field['selected']
-                ]
+            selected_fields = {'current_weather': [], 'air_quality': []}
+            for item in all_fields:
+                if item['type'] == 'field' and item['selected']:
+                    selected_fields[item['module']].append(item['name'])
             
             return selected_fields
         
@@ -263,9 +291,8 @@ class TerminalUI:
             print("="*60)
             
             for module_name, fields in result.items():
-                module_display = modules_map = {'current_weather': 'Current Weather', 'air_quality': 'Air Quality'}
-                display_name = modules_map.get(module_name, module_name)
-                print(f"{display_name}: {len(fields)} fields")
+                module_display = module_name.replace('_', ' ').title()
+                print(f"{module_display}: {len(fields)} fields")
                 
                 if fields:
                     # Show first few selected field names
