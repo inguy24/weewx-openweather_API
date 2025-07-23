@@ -479,7 +479,14 @@ class DatabaseManager:
     def _check_existing_fields(self):
         """Check which OpenWeather fields already exist in database."""
         try:
-            db_binding = self.config_dict.get('DataBindings', {}).get('wx_binding', 'wx_binding')
+            # Get the actual config path string, not the Section object
+            config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
+            if not config_path:
+                config_path = '/etc/weewx/weewx.conf'
+            
+            db_binding = 'wx_binding'
+            if 'DataBindings' in self.config_dict and 'wx_binding' in self.config_dict['DataBindings']:
+                db_binding = 'wx_binding'
             
             with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
                 existing_fields = []
@@ -496,7 +503,11 @@ class DatabaseManager:
     def _add_missing_fields(self, missing_fields, field_mappings):
         """Add missing database fields using weectl commands."""
         created_count = 0
-        config_path = self.config_dict.get('config_path', '/etc/weewx/weewx.conf')
+        
+        # Get the actual config path string
+        config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
+        if not config_path:
+            config_path = '/etc/weewx/weewx.conf'
         
         # Find weectl executable
         weectl_path = self._find_weectl()
@@ -511,12 +522,19 @@ class DatabaseManager:
             try:
                 print(f"  Adding field '{field_name}' ({field_type})...")
                 
-                cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
+                # Build command carefully - only add --config if we have a valid path
+                cmd = [weectl_path, 'database', 'add-column', field_name]
                 
                 # Only add --type for REAL/INTEGER (weectl limitation)
                 if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, '--type')
-                    cmd.insert(-2, field_type)
+                    cmd.extend(['--type', field_type])
+                
+                # Add config path if we have one
+                if config_path and os.path.exists(config_path):
+                    cmd.extend(['--config', config_path])
+                
+                # Add confirmation flag
+                cmd.append('-y')
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
@@ -785,26 +803,26 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         service_config = config_dict['OpenWeatherService']
         
-        # Basic configuration
-        service_config['enable'] = True
-        service_config['api_key'] = api_key
-        service_config['timeout'] = 30
-        service_config['log_success'] = False
-        service_config['log_errors'] = True
+        # Basic configuration - use proper types
+        service_config['enable'] = 'true'
+        service_config['api_key'] = str(api_key)
+        service_config['timeout'] = '30'
+        service_config['log_success'] = 'false'
+        service_config['log_errors'] = 'true'
         
         # Module configuration
         if 'modules' not in service_config:
             service_config['modules'] = configobj.Section(service_config, [], service_config, name='modules')
         
-        service_config['modules']['current_weather'] = modules.get('current_weather', True)
-        service_config['modules']['air_quality'] = modules.get('air_quality', True)
+        service_config['modules']['current_weather'] = 'true' if modules.get('current_weather', True) else 'false'
+        service_config['modules']['air_quality'] = 'true' if modules.get('air_quality', True) else 'false'
         
         # Interval configuration
         if 'intervals' not in service_config:
             service_config['intervals'] = configobj.Section(service_config, [], service_config, name='intervals')
         
-        service_config['intervals']['current_weather'] = 3600
-        service_config['intervals']['air_quality'] = 7200
+        service_config['intervals']['current_weather'] = '3600'
+        service_config['intervals']['air_quality'] = '7200'
         
         # Field selection configuration
         if 'field_selection' not in service_config:
@@ -813,7 +831,11 @@ class OpenWeatherInstaller(ExtensionInstaller):
         field_config = service_config['field_selection']
         
         if complexity != 'custom':
-            field_config['complexity_level'] = complexity
+            field_config['complexity_level'] = str(complexity)
+            # Remove any custom field sections when using predefined levels
+            for module in ['current_weather', 'air_quality']:
+                if module in field_config:
+                    del field_config[module]
         else:
             field_config['complexity_level'] = 'custom'
             
@@ -828,9 +850,9 @@ class OpenWeatherInstaller(ExtensionInstaller):
                 for key in list(module_config.keys()):
                     del module_config[key]
                 
-                # Add selected fields
+                # Add selected fields as strings
                 for field in fields:
-                    module_config[field] = True
+                    module_config[field] = 'true'
     
     def _setup_unit_system(self):
         """Setup unit system extensions for OpenWeather data."""
