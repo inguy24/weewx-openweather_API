@@ -84,51 +84,157 @@ class TerminalUI:
                 sys.exit(1)
     
     def show_custom_selection(self, field_definitions):
-        """Show interactive field selection for custom configuration."""
+        """Show tab-selectable checklist for custom field selection."""
+        import termios
+        import tty
+        
         print("\n" + "="*80)
         print("CUSTOM FIELD SELECTION")
         print("="*80)
-        print("Select specific fields to collect and store in your database.")
-        print("Enter 'y' to include a field, 'n' to skip, or press Enter to skip.")
+        print("Use arrow keys to navigate, SPACE to toggle selection, TAB to switch modules, ENTER to confirm")
         print("-" * 80)
         
-        selected_fields = {'current_weather': [], 'air_quality': []}
-        
+        # Organize fields for display
+        modules = {}
         for module_name, module_data in field_definitions.items():
-            module_display = module_name.upper().replace('_', ' ')
-            print(f"\n{module_display} DATA:")
-            print("=" * (len(module_display) + 6))
+            modules[module_name] = {
+                'display_name': module_name.upper().replace('_', ' '),
+                'fields': []
+            }
             
             for category_name, category_data in module_data['categories'].items():
-                print(f"\n{category_data['display_name']}:")
-                print("-" * (len(category_data['display_name']) + 1))
-                
                 for field_name, field_info in category_data['fields'].items():
-                    while True:
-                        prompt = f"  {field_info['display_name']} [y/n]: "
-                        try:
-                            choice = input(prompt).strip().lower()
-                        except (KeyboardInterrupt, EOFError):
-                            print("\nInstallation cancelled by user.")
-                            sys.exit(1)
-                        
-                        if choice in ['y', 'yes']:
-                            selected_fields[module_name].append(field_name)
-                            print(f"    ✓ {field_info['display_name']} - SELECTED")
-                            break
-                        elif choice in ['n', 'no', '']:
-                            print(f"    ○ {field_info['display_name']} - skipped")
-                            break
-                        else:
-                            print("    Please enter 'y' for yes, 'n' for no, or press Enter to skip")
+                    modules[module_name]['fields'].append({
+                        'name': field_name,
+                        'display': field_info['display_name'],
+                        'category': category_data['display_name'],
+                        'selected': False
+                    })
         
-        # Show selection summary
-        total_selected = len(selected_fields['current_weather']) + len(selected_fields['air_quality'])
+        # State variables
+        current_module = 0
+        current_field = 0
+        module_names = list(modules.keys())
+        
+        # Terminal control
+        def get_key():
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.cbreak(fd)
+                key = sys.stdin.read(1)
+                if key == '\x1b':  # ESC sequence
+                    key += sys.stdin.read(2)
+                return key
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        
+        def clear_screen():
+            print('\033[2J\033[H', end='')
+        
+        def draw_interface():
+            clear_screen()
+            print("="*80)
+            print("CUSTOM FIELD SELECTION")
+            print("="*80)
+            print("Navigation: ↑↓ = move, SPACE = toggle, TAB = switch module, ENTER = confirm, q = quit")
+            print("-" * 80)
+            
+            # Module tabs
+            tab_line = ""
+            for i, module_name in enumerate(module_names):
+                display_name = modules[module_name]['display_name']
+                if i == current_module:
+                    tab_line += f"[{display_name}] "
+                else:
+                    tab_line += f" {display_name}  "
+            print(tab_line)
+            print("-" * 80)
+            
+            # Current module fields
+            current_module_name = module_names[current_module]
+            fields = modules[current_module_name]['fields']
+            
+            current_category = ""
+            for i, field in enumerate(fields):
+                # Category header
+                if field['category'] != current_category:
+                    current_category = field['category']
+                    print(f"\n{current_category}:")
+                
+                # Field line
+                cursor = "→ " if i == current_field else "  "
+                checkbox = "[✓] " if field['selected'] else "[ ] "
+                highlight = "\033[7m" if i == current_field else ""
+                reset = "\033[0m" if i == current_field else ""
+                
+                print(f"{cursor}{highlight}{checkbox}{field['display']}{reset}")
+            
+            # Summary
+            total_selected = sum(len([f for f in module['fields'] if f['selected']]) 
+                               for module in modules.values())
+            print(f"\n" + "-" * 80)
+            print(f"Total selected: {total_selected} fields")
+            
+            # Module summaries
+            for module_name, module in modules.items():
+                selected_count = len([f for f in module['fields'] if f['selected']])
+                print(f"{module['display_name']}: {selected_count} selected")
+        
+        # Main interaction loop
+        try:
+            while True:
+                draw_interface()
+                key = get_key()
+                
+                current_module_name = module_names[current_module]
+                fields = modules[current_module_name]['fields']
+                
+                if key == 'q':
+                    print("\nSelection cancelled.")
+                    return None
+                elif key == '\r':  # ENTER
+                    break
+                elif key == '\t':  # TAB - switch module
+                    current_module = (current_module + 1) % len(module_names)
+                    current_field = 0
+                elif key == '\x1b[A':  # UP arrow
+                    current_field = max(0, current_field - 1)
+                elif key == '\x1b[B':  # DOWN arrow
+                    current_field = min(len(fields) - 1, current_field + 1)
+                elif key == ' ':  # SPACE - toggle selection
+                    if fields:
+                        fields[current_field]['selected'] = not fields[current_field]['selected']
+                elif key == '\x1b[Z':  # SHIFT+TAB - previous module
+                    current_module = (current_module - 1) % len(module_names)
+                    current_field = 0
+                    
+        except (KeyboardInterrupt, EOFError):
+            print("\nInstallation cancelled by user.")
+            sys.exit(1)
+        
+        # Convert to expected format
+        selected_fields = {}
+        for module_name, module in modules.items():
+            selected_fields[module_name] = [
+                field['name'] for field in module['fields'] if field['selected']
+            ]
+        
+        # Final summary
+        clear_screen()
+        total_selected = sum(len(fields) for fields in selected_fields.values())
         print(f"\n" + "="*60)
         print(f"SELECTION SUMMARY: {total_selected} fields selected")
         print("="*60)
-        print(f"Current Weather: {len(selected_fields['current_weather'])} fields")
-        print(f"Air Quality: {len(selected_fields['air_quality'])} fields")
+        
+        for module_name, fields in selected_fields.items():
+            module_display = modules[module_name]['display_name']
+            print(f"{module_display}: {len(fields)} fields")
+            if fields:
+                field_names = [modules[module_name]['fields'][i]['display'] 
+                             for i, field in enumerate(modules[module_name]['fields']) 
+                             if field['name'] in fields]
+                print(f"  {', '.join(field_names[:3])}" + ("..." if len(field_names) > 3 else ""))
         
         if total_selected == 0:
             print("\nWarning: No fields selected. Using 'standard' defaults instead.")
