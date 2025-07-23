@@ -1,35 +1,57 @@
 # WeeWX OpenWeather Extension
 
-A comprehensive WeeWX extension that integrates OpenWeatherMap APIs to provide weather and air quality data with modular configuration and efficient API usage.
+A comprehensive WeeWX extension that integrates OpenWeatherMap APIs to provide weather and air quality data with **interactive field selection** and efficient API usage.
 
-## Features
+## 🌟 Features
 
+- **Interactive Field Selection**: Choose exactly which data fields you want during installation
+- **Smart Complexity Levels**: 4 predefined levels from minimal (6 fields) to everything (20+ fields)
+- **Custom Field Selection**: Advanced curses-based interface for precise field control
+- **Dynamic Database Schema**: Only creates database fields for selected data
 - **Current Weather Data**: Temperature, humidity, pressure, wind, cloud cover, visibility
 - **Air Quality Data**: PM2.5, PM10, O₃, NO₂, SO₂, CO, NH₃, OpenWeather AQI (1-5 scale)
-- **UV Index**: Current UV radiation data
+- **UV Index**: Current UV radiation data (framework ready)
 - **Forecast Data**: Daily and hourly forecasts (framework ready)
 - **Modular Configuration**: Enable only the data modules you need
 - **Rate Limit Management**: Efficient API usage with configurable intervals
 - **Multi-Source Support**: Works alongside local weather stations
 - **Thread-Safe Operation**: Non-blocking background data collection
 
-## Requirements
+## 📊 Field Selection System
 
+### Complexity Levels
+
+| Level | Fields | Description |
+|-------|--------|-------------|
+| **Minimal** | 6 fields | Temperature, humidity, pressure, wind speed, PM2.5, AQI |
+| **Standard** | 9 fields | All minimal + feels-like temp, wind direction, cloud cover |
+| **Comprehensive** | 16 fields | All standard + visibility, wind gusts, daily min/max temp, PM10, ozone, NO2 |
+| **Everything** | 20+ fields | All available fields including rain/snow, atmospheric details, weather descriptions, all gases |
+| **Custom** | Your choice | Interactive selection of specific fields |
+
+### Benefits of Field Selection
+- **Reduced Database Size**: Only store data you actually need
+- **Faster Performance**: Less data processing and storage overhead
+- **Cleaner Reports**: Focus on relevant metrics for your use case
+- **API Efficiency**: Reduced processing of unused data
+
+## 🚀 Installation
+
+### Prerequisites
 - WeeWX 5.1 or later
 - Python 3.7 or later
 - OpenWeatherMap API key (free registration available)
 - Internet connection for API access
+- PyYAML library (automatically installed)
 
-## Quick Start
+### Step 1: Get API Key
+1. Visit [OpenWeatherMap](https://openweathermap.org/api)
+2. Create free account
+3. Generate API key (usually active within 10 minutes)
+4. Save your API key for installation
 
-1. **Get API Key**: Register at [OpenWeatherMap](https://openweathermap.org/api) for free API access
-2. **Install Extension**: `weectl extension install weewx-openweather.zip`
-3. **Follow Installation Prompts**: Configure API key and select modules
-4. **Restart WeeWX**: `sudo systemctl restart weewx`
+### Step 2: Install Extension
 
-## Installation
-
-### Method 1: Extension Installer (Recommended)
 ```bash
 # Download latest release
 wget https://github.com/inguy24/weewx-openweather_API/releases/latest/download/weewx-openweather.zip
@@ -37,96 +59,95 @@ wget https://github.com/inguy24/weewx-openweather_API/releases/latest/download/w
 # Install with interactive configuration
 weectl extension install weewx-openweather.zip
 
-# Follow prompts to:
-# - Enter OpenWeatherMap API key
-# - Select data modules to enable
-# - Configure API call intervals
-# - Automatically create database fields
+# The installer will guide you through:
+# 1. API key setup
+# 2. Module selection (current_weather, air_quality)
+# 3. Field selection (complexity level or custom)
+# 4. Automatic database schema creation
+# 5. Service registration
 
 # Restart WeeWX
 sudo systemctl restart weewx
 ```
 
-### Method 2: Manual Installation
-```bash
-# Clone repository
-git clone https://github.com/inguy24/weewx-openweather_API.git
-cd weewx-openweather_API
+## 🛠️ Interactive Installation Process
 
-# Create package
-zip -r weewx-openweather.zip install.py bin/ README.md CHANGELOG.md MANIFEST
-
-# Install
-weectl extension install weewx-openweather.zip
+### 1. **API Key Configuration**
 ```
-
-## Interactive Installation Process
-
-The installer provides a guided setup experience:
-
-### 1. **Station Coordinates Validation**
-```
-Validating station coordinates...
-✓ Station coordinates: 33.656915, -117.982542
-```
-
-### 2. **API Key Configuration**
-```
-OpenWeatherMap API Key Configuration
-----------------------------------------
-Get a free API key at: https://openweathermap.org/api
-Free tier includes 1,000 calls/day (sufficient for this extension)
+OPENWEATHERMAP API KEY SETUP
+============================
+You need a free API key from OpenWeatherMap.
+1. Visit: https://openweathermap.org/api
+2. Sign up for free account
+3. Get your API key from the dashboard
 
 Enter your OpenWeatherMap API key: [your-32-character-key]
 ✓ API key accepted: 1a2b3c4d...
 ```
 
-### 3. **Module Selection**
+### 2. **Module Selection**
 ```
-Module Configuration
---------------------
-Select which OpenWeather data modules to enable:
+MODULE SELECTION
+================
+Choose which OpenWeather data modules to enable:
 
-current_weather:
-  Description: Current weather (temperature, humidity, pressure, wind, clouds)
-  Recommended for all users
-Enable current_weather? [Y/n]: Y
-  ✓ current_weather enabled
+Enable current weather data (temperature, humidity, pressure, wind)? [Y/n]: Y
+✓ Current weather module enabled
 
-air_quality:
-  Description: Air quality data (PM2.5, PM10, ozone, NO2, gases, AQI)
-  Recommended for health monitoring
-Enable air_quality? [Y/n]: Y
-  ✓ air_quality enabled
-
-uv_index:
-  Description: UV radiation data (current and daily maximum)
-  Optional - useful for outdoor activities
-Enable uv_index? [y/N]: n
-  - uv_index disabled
+Enable air quality data (PM2.5, ozone, AQI)? [Y/n]: Y
+✓ Air quality module enabled
 ```
 
-### 4. **API Call Intervals**
+### 3. **Field Selection**
 ```
-API Call Interval Configuration
---------------------------------
-Configure how often to call OpenWeather APIs:
-• Free tier: 1,000 calls/day limit
-• Recommended intervals stay well within limits
+OPENWEATHER DATA COLLECTION LEVEL
+==================================
 
-current_weather:
-  Recommended interval: 3600 seconds (24 calls/day)
-Use recommended interval? [Y/n]: Y
-✓ Using recommended interval
+Choose data collection level:
+1. Minimal
+   Fields: Temperature, humidity, pressure, wind speed, PM2.5, AQI
 
-Total estimated daily API calls: 36
-✓ API usage well within free tier limits
+2. Standard
+   Fields: Temperature, feels-like, humidity, pressure, wind speed & direction, cloud cover, PM2.5, AQI
+
+3. Comprehensive
+   Fields: All standard plus: visibility, wind gusts, daily min/max temp, PM10, ozone, NO2
+
+4. Everything
+   Fields: All 20+ fields including rain/snow data, atmospheric details, weather descriptions, and all air quality gases
+
+5. Custom
+   Choose specific fields manually
+
+Enter choice [1-5]: 2
+✓ Selected: Standard
+```
+
+### 4. **Custom Field Selection** (if option 5 chosen)
+Interactive curses-based interface for precise field control:
+```
+CUSTOM FIELD SELECTION - Select All Desired Fields
+===================================================
+↑↓:Navigate  SPACE:Toggle  ENTER:Confirm  q:Quit
+
+=== CURRENT WEATHER ===
+  Temperature:
+    → [ ] Current temperature (x/n): x
+    ✓ [X] Current temperature - SELECTED
+      [ ] Feels-like temperature (x/n): n
+      [ ] Feels-like temperature - skipped
+      
+  Atmospheric:
+    → [ ] Atmospheric pressure (x/n): x
+    ✓ [X] Atmospheric pressure - SELECTED
+    
+Selected: 8 total | Current Weather: 5 | Air Quality: 3
 ```
 
 ### 5. **Database Schema Creation**
 ```
-Database Schema Management
-==========================
+DATABASE SCHEMA MANAGEMENT
+===========================
 Checking and extending database schema...
 
 Adding missing fields to database:
@@ -134,16 +155,32 @@ Adding missing fields to database:
     ✓ Successfully added 'ow_temperature'
   Adding field 'ow_pm25' (REAL)...
     ✓ Successfully added 'ow_pm25'
-  [additional fields...]
+  [additional fields based on selection...]
 
 ✓ Database schema management completed successfully
 ```
 
-## Configuration
+### 6. **Installation Complete**
+```
+INSTALLATION COMPLETED SUCCESSFULLY!
+====================================
+✓ API key configured
+✓ Data collection level: Standard
+✓ Database fields created: 9
+✓ Service registered: user.openweather.OpenWeatherService
+✓ Unit system configured
 
-After installation, your configuration will look like this:
+Next steps:
+1. Restart WeeWX: sudo systemctl restart weewx
+2. Check logs: sudo journalctl -u weewx -f
+3. Verify data collection in database/reports
+```
+
+## ⚙️ Configuration
 
 ### Automatic Configuration Created
+The installer creates this configuration based on your selections:
+
 ```ini
 [OpenWeatherService]
     enable = true
@@ -151,366 +188,286 @@ After installation, your configuration will look like this:
     log_success = false
     log_errors = true
     timeout = 30
-    retry_attempts = 3
     
     # Modules enabled during installation
     [[modules]]
         current_weather = true
         air_quality = true
-        uv_index = false
-        forecast_daily = false
-        forecast_hourly = false
     
-    # API call intervals configured during installation
+    # API call intervals
     [[intervals]]
-        current_weather = 3600    # 1 hour (24 calls/day)
-        air_quality = 7200        # 2 hours (12 calls/day)
-        uv_index = 3600           # 1 hour (24 calls/day)
-        forecast_daily = 21600    # 6 hours (4 calls/day)
-        forecast_hourly = 3600    # 1 hour (24 calls/day)
+        current_weather = 3600    # 1 hour
+        air_quality = 7200        # 2 hours
+    
+    # Field selection (created automatically)
+    [[field_selection]]
+        complexity_level = "standard"  # or "custom" for manual selection
+        
+        # Custom selections (only used if complexity_level = "custom")
+        [[[current_weather]]]
+            temp = true
+            feels_like = true
+            humidity = true
+            pressure = true
+            wind_speed = true
+            wind_direction = true
+            cloud_cover = true
+            # Only selected fields = true
+        
+        [[[air_quality]]]
+            pm2_5 = true
+            aqi = true
+            # Only selected fields = true
 
-# Service automatically registered during installation
+# Service automatically registered
 [Engine]
     [[Services]]
         data_services = user.openweather.OpenWeatherService, weewx.engine.StdConvert, weewx.engine.StdCalibrate, weewx.engine.StdQC
 ```
 
 ### Manual Configuration (Optional)
-You can modify the configuration after installation:
+You can modify settings after installation:
 
 ```ini
 [OpenWeatherService]
-    # Enable/disable the entire service
-    enable = true
-    
-    # Your OpenWeatherMap API key
-    api_key = YOUR_32_CHARACTER_API_KEY
-    
-    # Logging preferences
-    log_success = false    # Log successful data collection
-    log_errors = true      # Log errors and warnings
-    
-    # HTTP request settings
-    timeout = 30           # Request timeout in seconds
-    retry_attempts = 3     # Number of retry attempts
-    
-    # Enable/disable specific modules
-    [[modules]]
-        current_weather = true     # Temperature, humidity, pressure, wind
-        air_quality = true         # PM2.5, PM10, ozone, gases, AQI
-        uv_index = false          # UV radiation data
-        forecast_daily = false    # 8-day daily forecasts
-        forecast_hourly = false   # 48-hour hourly forecasts
-    
-    # API call intervals (seconds)
-    [[intervals]]
-        current_weather = 3600    # 1 hour - current conditions
-        air_quality = 7200        # 2 hours - air quality changes slowly
-        uv_index = 3600           # 1 hour - UV changes throughout day
-        forecast_daily = 21600    # 6 hours - daily forecasts
-        forecast_hourly = 3600    # 1 hour - hourly forecasts
+    # Change complexity level
+    [[field_selection]]
+        complexity_level = "comprehensive"  # minimal/standard/comprehensive/everything
+        
+    # Or enable custom selection and modify fields
+    [[field_selection]]
+        complexity_level = "custom"
+        [[[current_weather]]]
+            temp = true
+            feels_like = false
+            temp_min = true
+            temp_max = true
+            # ... modify as needed
 ```
 
-## Database Fields
+## 📋 Database Fields
 
-All fields use the `ow_` prefix to avoid conflicts. Fields are created automatically during installation based on enabled modules:
+Fields are created dynamically based on your selection. All fields use the `ow_` prefix:
 
-### Current Weather Module
+### Current Weather Module (Available Fields)
 - `ow_temperature` (°C) - Current temperature
-- `ow_feels_like` (°C) - Feels like temperature
+- `ow_feels_like` (°C) - Feels like temperature  
+- `ow_temp_min` (°C) - Daily minimum temperature
+- `ow_temp_max` (°C) - Daily maximum temperature
 - `ow_pressure` (hPa) - Atmospheric pressure
 - `ow_humidity` (%) - Relative humidity
+- `ow_sea_level` (hPa) - Sea level pressure
+- `ow_grnd_level` (hPa) - Ground level pressure
 - `ow_cloud_cover` (%) - Cloud cover percentage (0-100%)
 - `ow_visibility` (m) - Visibility distance
 - `ow_wind_speed` (m/s) - Wind speed
 - `ow_wind_direction` (°) - Wind direction (degrees)
+- `ow_wind_gust` (m/s) - Wind gusts
+- `ow_rain_1h` (mm) - Rain last hour
+- `ow_rain_3h` (mm) - Rain last 3 hours
+- `ow_snow_1h` (mm) - Snow last hour
+- `ow_snow_3h` (mm) - Snow last 3 hours
+- `ow_weather_main` (text) - Weather category
+- `ow_weather_description` (text) - Weather description
+- `ow_weather_icon` (text) - Weather icon code
 
-### Air Quality Module
+### Air Quality Module (Available Fields)
 - `ow_pm25` (μg/m³) - PM2.5 concentration
 - `ow_pm10` (μg/m³) - PM10 concentration
 - `ow_ozone` (μg/m³) - Ozone concentration
 - `ow_no2` (μg/m³) - NO₂ concentration
 - `ow_so2` (μg/m³) - SO₂ concentration
 - `ow_co` (μg/m³) - CO concentration
+- `ow_nh3` (μg/m³) - NH₃ concentration
+- `ow_no` (μg/m³) - NO concentration
 - `ow_aqi` (1-5) - OpenWeather AQI (European scale)
 
-### UV Index Module
-- `ow_uv_current` - Current UV index
-- `ow_uv_max` - Daily maximum UV index
+### Example Field Selection Results
 
-### Forecast Modules (Framework Ready)
-- `ow_forecast_temp_day1` (°C) - Tomorrow's temperature
-- `ow_forecast_temp_day2` (°C) - Day 2 temperature
-- `ow_forecast_temp_1h` (°C) - 1-hour forecast temperature
-- `ow_forecast_temp_6h` (°C) - 6-hour forecast temperature
+| Complexity Level | Database Fields Created | Example Fields |
+|------------------|------------------------|----------------|
+| **Minimal** | 6 fields | `ow_temperature`, `ow_humidity`, `ow_pressure`, `ow_wind_speed`, `ow_pm25`, `ow_aqi` |
+| **Standard** | 9 fields | All minimal + `ow_feels_like`, `ow_wind_direction`, `ow_cloud_cover` |
+| **Comprehensive** | 16 fields | All standard + `ow_visibility`, `ow_wind_gust`, `ow_temp_min`, `ow_temp_max`, `ow_pm10`, `ow_ozone`, `ow_no2` |
 
-## API Usage and Rate Limits
+## 🔄 Changing Field Selection After Installation
+
+### Method 1: Reinstall with New Selection
+```bash
+# Reinstall to change field selection
+weectl extension install weewx-openweather.zip
+
+# Choose different complexity level or custom fields
+# Existing fields are preserved, new ones added as needed
+```
+
+### Method 2: Manual Configuration Edit
+```bash
+# Edit weewx.conf
+sudo nano /etc/weewx/weewx.conf
+
+# Change complexity_level or modify custom field selections
+[OpenWeatherService]
+    [[field_selection]]
+        complexity_level = "comprehensive"  # Change level
+
+# Add new database fields manually if switching to higher complexity
+weectl database add-column ow_visibility --type REAL -y
+weectl database add-column ow_wind_gust --type REAL -y
+
+# Restart WeeWX
+sudo systemctl restart weewx
+```
+
+## 📊 API Usage and Rate Limits
 
 ### Free Tier Limits
 - **Daily**: 1,000 calls/day
 - **Per minute**: 60 calls/minute
 - **Geographic**: Global coverage
-- **Historical data**: Not included in free tier
 
-### Recommended Usage Patterns
-| Module | Interval | Daily Calls | Rationale |
-|--------|----------|-------------|-----------|
-| Current Weather | 1 hour | 24 | Weather changes hourly |
-| Air Quality | 2 hours | 12 | Air quality changes slowly |
-| UV Index | 1 hour | 24 | UV varies throughout day |
-| Daily Forecast | 6 hours | 4 | Daily forecasts stable |
-| Hourly Forecast | 1 hour | 24 | For detailed planning |
+### Usage Based on Field Selection
+API usage is the same regardless of field selection - efficiency comes from reduced processing and database storage.
 
-**Total with all modules**: ~88 calls/day (well within 1,000 limit)
+| Module | Default Interval | Daily Calls |
+|--------|------------------|-------------|
+| Current Weather | 1 hour | 24 |
+| Air Quality | 2 hours | 12 |
+| **Total** | | **36 calls/day** |
 
-### Usage Monitoring
+Well within the 1,000 call daily limit!
+
+## 🔧 Troubleshooting
+
+### Field Selection Issues
+
+**"No fields selected" during custom selection**
 ```bash
-# Check API usage in WeeWX logs
-sudo tail -f /var/log/weewx/weewx.log | grep OpenWeather
-
-# Monitor daily usage
-grep "OpenWeather" /var/log/weewx/weewx.log | grep "$(date +%Y-%m-%d)" | wc -l
+# Falls back to 'standard' defaults automatically
+# Check logs: sudo journalctl -u weewx -f
 ```
 
-## Data Sources
+**Database fields not created**
+```bash
+# Check field creation in logs
+grep "database" /var/log/weewx/weewx.log
 
-### OpenWeatherMap APIs Used
-- **Current Weather API**: `api.openweathermap.org/data/2.5/weather`
-- **Air Pollution API**: `api.openweathermap.org/data/2.5/air_pollution`
-- **UV Index API**: `api.openweathermap.org/data/2.5/uvi`
-- **Daily Forecast API**: `api.openweathermap.org/data/2.5/forecast/daily`
-- **Hourly Forecast API**: `api.openweathermap.org/data/2.5/forecast`
+# Manually add missing fields
+weectl database add-column ow_temperature --type REAL -y
+weectl database add-column ow_pm25 --type REAL -y
+```
 
-### OpenWeather AQI Scale (European Standard)
-OpenWeather uses a simplified 1-5 scale based on European standards:
+**Custom selection interface not working**
+```bash
+# Falls back to terminal prompts if curses unavailable
+# Standard field selection will be used
+```
 
-| AQI | Level | Description | Example Conditions |
-|-----|-------|-------------|-------------------|
-| 1 | Good | Minimal pollution | Clear, clean air |
-| 2 | Fair | Acceptable for most people | Slight haze |
-| 3 | Moderate | Sensitive groups may experience symptoms | Noticeable pollution |
-| 4 | Poor | Health warnings for everyone | Unhealthy air |
-| 5 | Very Poor | Health alert for everyone | Hazardous conditions |
+### Configuration Issues
 
-**Note**: This differs from the US EPA AQI scale (0-500). Raw pollutant concentrations are also provided for custom calculations.
+**Invalid complexity level**
+```bash
+# Edit weewx.conf and set to valid level
+[OpenWeatherService]
+    [[field_selection]]
+        complexity_level = "standard"  # minimal/standard/comprehensive/everything
+```
 
-## Integration with Other Extensions
+**Field selection mismatch**
+```bash
+# Check which fields are actually in database
+weectl database show
+
+# Compare with configuration
+grep -A 20 "field_selection" /etc/weewx/weewx.conf
+```
+
+### Standard Troubleshooting
+
+**API Key Errors**
+- Verify key at https://openweathermap.org/api
+- Check that key is active (may take 10 minutes)
+- Ensure no extra spaces in configuration
+
+**No Data in Database**
+- Check WeeWX logs: `sudo tail -f /var/log/weewx/weewx.log`
+- Verify field selection in configuration
+- Check API connectivity
+
+**Rate Limit Exceeded**
+- Increase intervals in configuration
+- Monitor usage: `grep "OpenWeather" /var/log/weewx/weewx.log | wc -l`
+
+## 📖 Examples
+
+### Using Selected Fields in Templates
+```html
+<!-- Only works if fields were selected during installation -->
+<p>Current Temperature: $current.ow_temperature</p>
+<p>Air Quality Index: $current.ow_aqi</p>
+
+<!-- Check if field exists before using -->
+#if $current.ow_feels_like is not None
+<p>Feels Like: $current.ow_feels_like</p>
+#end if
+```
+
+### Database Queries
+```sql
+-- Query only selected fields (example for 'standard' selection)
+SELECT datetime(dateTime, 'unixepoch', 'localtime') as date,
+       ow_temperature, ow_feels_like, ow_humidity, 
+       ow_pressure, ow_wind_speed, ow_wind_direction,
+       ow_cloud_cover, ow_pm25, ow_aqi
+FROM archive 
+WHERE ow_temperature IS NOT NULL 
+ORDER BY dateTime DESC 
+LIMIT 10;
+```
+
+## 🚀 Advanced Usage
+
+### Upgrading Field Selection
+```bash
+# To add more fields later:
+# 1. Reinstall with higher complexity level
+weectl extension install weewx-openweather.zip
+
+# 2. Select "comprehensive" or "everything"
+# 3. Existing data preserved, new fields added
+```
+
+### Performance Optimization
+- **Minimal Selection**: Fastest performance, smallest database
+- **Standard Selection**: Good balance of data and performance  
+- **Custom Selection**: Optimize for your specific needs
+- **Everything**: Maximum data, larger database size
+
+## 🤝 Contributing
+
+Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Field Selection Development
+- Field definitions: `openweather_fields.yaml`
+- Smart defaults: `field_selection_defaults.yaml`
+- Interactive UI: `install.py` (TerminalUI class)
+
+## 📄 License
+
+GNU General Public License v3.0 - see [LICENSE](LICENSE) file for details.
+
+## 🔗 Related Extensions
 
 This extension is designed to work with:
 - **WeeWX CDC Surveillance Extension**: Public health surveillance data
 - **WeeWX Environmental Health Extension**: Combined health risk assessment
-- **Local weather stations**: Provides additional data fields
-- **Air quality sensors**: Fallback/validation data sources
 
-```ini
-# Example combined configuration
-[OpenWeatherService]
-    # OpenWeather provides air quality data
-    enable = true
-    
-[CDCSurveillanceService]
-    # CDC provides disease surveillance
-    enable = true
-    
-[EnvironmentalHealthService]
-    # Combines both for health assessment
-    enable = true
-    air_quality_source = "openweather"
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### API Key Errors
-```
-Error: API authentication failed
-```
-**Solution**: 
-1. Verify API key at https://openweathermap.org/api
-2. Check that key is active (may take a few minutes after signup)
-3. Ensure no extra spaces in configuration
-
-#### Rate Limit Exceeded
-```
-Error: API rate limit exceeded (HTTP 429)
-```
-**Solution**: 
-1. Increase intervals in configuration
-2. Check total daily usage: `grep "OpenWeather" /var/log/weewx/weewx.log | wc -l`
-3. Consider upgrading API plan if needed
-
-#### No Data in Database
-```
-Check WeeWX logs: sudo tail -f /var/log/weewx/weewx.log
-```
-**Common causes**:
-- API connectivity issues
-- Missing database fields
-- Service not started
-- Configuration errors
-
-#### Module Not Collecting Data
-```
-2025-01-21 10:00:00 weewx[1234]: INFO user.openweather: Successfully collected current_weather data
-2025-01-21 10:00:00 weewx[1234]: WARNING user.openweather: Failed to collect air_quality data
-```
-**Solution**:
-1. Check module is enabled in configuration
-2. Verify API endpoints are accessible
-3. Check for network connectivity issues
-
-### Debug Mode
-Enable detailed logging:
-```ini
-[OpenWeatherService]
-    log_success = true
-    log_errors = true
-
-[Logging]
-    [[loggers]]
-        [[[user.openweather]]]
-            level = DEBUG
-```
-
-### Test Scripts
-```bash
-# Test API connectivity manually
-python3 -c "
-import urllib.request, json
-api_key = 'YOUR_API_KEY'
-lat, lon = 33.656915, -117.982542
-url = f'http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}'
-response = urllib.request.urlopen(url)
-data = json.loads(response.read())
-print('API Test Success:', data.get('name', 'Unknown'))
-"
-
-# Check database fields
-weectl database show
-
-# Validate configuration
-weectl station show
-```
-
-### Manual Database Field Creation
-If automatic field creation fails:
-```bash
-# Current weather fields
-weectl database add-column ow_temperature --type REAL -y
-weectl database add-column ow_feels_like --type REAL -y
-weectl database add-column ow_pressure --type REAL -y
-weectl database add-column ow_humidity --type REAL -y
-weectl database add-column ow_cloud_cover --type REAL -y
-weectl database add-column ow_visibility --type REAL -y
-weectl database add-column ow_wind_speed --type REAL -y
-weectl database add-column ow_wind_direction --type REAL -y
-
-# Air quality fields
-weectl database add-column ow_pm25 --type REAL -y
-weectl database add-column ow_pm10 --type REAL -y
-weectl database add-column ow_ozone --type REAL -y
-weectl database add-column ow_no2 --type REAL -y
-weectl database add-column ow_so2 --type REAL -y
-weectl database add-column ow_co --type REAL -y
-weectl database add-column ow_aqi --type INTEGER -y
-
-# UV index fields
-weectl database add-column ow_uv_current --type REAL -y
-weectl database add-column ow_uv_max --type REAL -y
-```
-
-## Development
-
-### Project Structure
-```
-weewx-openweather/
-├── install.py                  # Extension installer
-├── bin/user/
-│   └── openweather.py         # Service implementation
-├── README.md                  # This documentation
-├── CHANGELOG.md              # Version history
-└── MANIFEST                  # Package manifest
-```
-
-### Contributing
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/new-feature`
-3. Make changes and test thoroughly
-4. Update documentation if needed
-5. Submit pull request with detailed description
-
-### Development Setup
-```bash
-# Clone for development
-git clone https://github.com/inguy24/weewx-openweather_API.git
-cd weewx-openweather_API
-
-# Test installation locally
-zip -r weewx-openweather-dev.zip install.py bin/ README.md CHANGELOG.md MANIFEST
-weectl extension install weewx-openweather-dev.zip
-
-# View logs during development
-sudo tail -f /var/log/weewx/weewx.log | grep -E "(OpenWeather|ERROR|WARNING)"
-```
-
-### Code Quality
-- Follow PEP 8 Python style guidelines
-- Add comprehensive error handling
-- Test with various API conditions (success, failure, rate limits)
-- Validate configuration edge cases
-- Test database operations thoroughly
-
-## Performance
-
-### Resource Usage
-- **Memory**: <10MB additional during normal operation
-- **CPU**: Minimal impact, API calls run in background threads
-- **Network**: ~1-5KB per API call depending on modules
-- **Database**: <1KB per archive record for all fields
-
-### Optimization Tips
-1. **Enable only needed modules** - Reduces API calls and database size
-2. **Adjust intervals** - Longer intervals reduce API usage
-3. **Monitor logs** - Watch for errors or rate limiting
-4. **Database maintenance** - Regular cleanup of old data if needed
-
-## Support
+## 📞 Support
 
 - **Documentation**: This README and inline code comments
-- **Issues**: Report bugs and feature requests on [GitHub Issues](https://github.com/inguy24/weewx-openweather_API/issues)
+- **Issues**: [GitHub Issues](https://github.com/inguy24/weewx-openweather_API/issues)
 - **WeeWX Forum**: [WeeWX User Group](https://groups.google.com/g/weewx-user)
-- **API Documentation**: [OpenWeatherMap API Docs](https://openweathermap.org/api)
-
-## Changelog
-
-### Version 1.0.0 (2025-01-21)
-- Initial release
-- Current weather data collection
-- Air quality data collection
-- UV index data collection
-- Modular configuration system
-- Interactive installation process
-- Automatic database schema management
-- Thread-safe background data collection
-- Comprehensive error handling and retry logic
-
-## Related Projects
-
-- [WeeWX CDC Surveillance Extension](https://github.com/inguy24/weewx-cdc-surveillance) - Public health surveillance data
-- [WeeWX Environmental Health Extension](https://github.com/inguy24/weewx-environmental-health) - Combined health risk assessment
-- [WeeWX Main Project](https://github.com/weewx/weewx) - Weather station software framework
-
-## License
-
-GNU General Public License v3.0 - see [LICENSE](LICENSE) file for details.
-
-## Credits
-
-- **WeeWX**: Weather station software framework by Tom Keffer and contributors
-- **OpenWeatherMap**: Weather and air quality data provider
-- **WeeWX Community**: Extensions development patterns and best practices
 
 ---
 
-**Note**: This extension is part of a comprehensive environmental health monitoring framework. Consider installing all three extensions (OpenWeather, CDC Surveillance, Environmental Health) for complete environmental and health risk assessment capabilities.
+**Enhanced with smart field selection for efficient, customized weather data collection.**
