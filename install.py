@@ -764,7 +764,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
                 continue
             
             # Basic format validation
-            if not re.match(r'^[a-fA-F0-9]+
+            if not re.match(r'^[a-fA-F0-9]+$', api_key):
                 print("API key should contain only hexadecimal characters. Please verify and try again.")
                 continue
             
@@ -900,12 +900,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
 
 if __name__ == '__main__':
     print("This is a WeeWX extension installer.")
-    print("Use: weectl extension install weewx-openweather.zip"), api_key):
-                print("API key should contain only hexadecimal characters. Please verify and try again.")
-                continue
-            
-            print(f"✓ API key accepted: {api_key[:8]}...")
-            return api_key
+    print("Use: weectl extension install weewx-openweather.zip")
     
     def _select_modules(self):
         """Select which OpenWeather modules to enable."""
