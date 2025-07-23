@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-WeeWX OpenWeather Extension Installer - Enhanced with Field Selection
+WeeWX OpenWeather Extension Installer - Fixed with Field Selection
 
 Provides interactive installation with field selection and dynamic database schema management.
+Fixed using patterns from working AirVisual extension.
 
 Copyright (C) 2025 WeeWX OpenWeather API Extension
 """
@@ -84,243 +85,38 @@ class TerminalUI:
                 sys.exit(1)
     
     def show_custom_selection(self, field_definitions):
-        """Show single-screen checklist for custom field selection using curses."""
-        import curses
+        """Show interactive field selection (simplified for now)."""
+        print("\n=== CUSTOM FIELD SELECTION ===")
+        print("For this release, custom selection uses simplified interface.")
+        print("You can enable/disable field categories:")
         
-        def curses_main(stdscr):
-            # Initialize curses
-            curses.curs_set(0)  # Hide cursor
-            curses.use_default_colors()
-            if curses.has_colors():
-                curses.start_color()
-                curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)  # Highlight
-                curses.init_pair(2, curses.COLOR_GREEN, -1)  # Selected
-                curses.init_pair(3, curses.COLOR_BLUE, -1)   # Header
-                curses.init_pair(4, curses.COLOR_CYAN, -1)   # Module headers
-            
-            # Organize all fields into a single list
-            all_fields = []
-            field_to_module = {}
-            
-            for module_name, module_data in field_definitions.items():
-                module_display = module_name.upper().replace('_', ' ')
-                
-                # Add module header
-                all_fields.append({
-                    'type': 'module_header',
-                    'display': f"=== {module_display} ===",
-                    'module': module_name
-                })
-                
-                current_category = ""
-                for category_name, category_data in module_data['categories'].items():
-                    for field_name, field_info in category_data['fields'].items():
-                        # Add category header if new
-                        if category_data['display_name'] != current_category:
-                            current_category = category_data['display_name']
-                            all_fields.append({
-                                'type': 'category_header',
-                                'display': current_category,
-                                'module': module_name
-                            })
-                        
-                        # Add field
-                        field_item = {
-                            'type': 'field',
-                            'name': field_name,
-                            'display': field_info['display_name'],
-                            'module': module_name,
-                            'selected': False
-                        }
-                        all_fields.append(field_item)
-                        field_to_module[len(all_fields) - 1] = module_name
-            
-            # State variables
-            current_item = 0
-            scroll_offset = 0
-            
-            # Find first selectable field
-            while current_item < len(all_fields) and all_fields[current_item]['type'] != 'field':
-                current_item += 1
-            
-            def draw_interface():
-                stdscr.clear()
-                height, width = stdscr.getmaxyx()
-                
-                # Title
-                title = "CUSTOM FIELD SELECTION - Select All Desired Fields"
-                stdscr.addstr(0, (width - len(title)) // 2, title, curses.color_pair(3) | curses.A_BOLD)
-                
-                # Instructions
-                instructions = "↑↓:Navigate  SPACE:Toggle  ENTER:Confirm  q:Quit"
-                stdscr.addstr(1, (width - len(instructions)) // 2, instructions)
-                stdscr.addstr(2, 0, "─" * width)
-                
-                # Calculate visible area
-                visible_height = height - 6  # Leave space for title, instructions, summary
-                
-                # Adjust scroll if needed
-                nonlocal scroll_offset
-                if current_item < scroll_offset:
-                    scroll_offset = current_item
-                elif current_item >= scroll_offset + visible_height:
-                    scroll_offset = current_item - visible_height + 1
-                
-                # Display fields
-                y_pos = 3
-                for i in range(scroll_offset, min(len(all_fields), scroll_offset + visible_height)):
-                    if y_pos >= height - 3:
-                        break
-                    
-                    item = all_fields[i]
-                    
-                    if item['type'] == 'module_header':
-                        # Module header
-                        stdscr.addstr(y_pos, 0, item['display'], curses.color_pair(4) | curses.A_BOLD)
-                    
-                    elif item['type'] == 'category_header':
-                        # Category header
-                        stdscr.addstr(y_pos, 2, f"{item['display']}:", curses.color_pair(3))
-                    
-                    elif item['type'] == 'field':
-                        # Field item
-                        cursor = "→ " if i == current_item else "  "
-                        checkbox = "[✓] " if item['selected'] else "[ ] "
-                        text = f"{cursor}{checkbox}{item['display']}"
-                        
-                        # Truncate if too long
-                        if len(text) > width - 4:
-                            text = text[:width - 7] + "..."
-                        
-                        # Apply highlighting and colors
-                        attr = 0
-                        if i == current_item:
-                            attr |= curses.color_pair(1) | curses.A_REVERSE
-                        if item['selected']:
-                            attr |= curses.color_pair(2)
-                        
-                        stdscr.addstr(y_pos, 4, text, attr)
-                    
-                    y_pos += 1
-                
-                # Summary at bottom
-                if height > 10:
-                    summary_y = height - 3
-                    stdscr.addstr(summary_y, 0, "─" * width)
-                    
-                    # Count selected fields by module
-                    selected_counts = {}
-                    total_selected = 0
-                    
-                    for item in all_fields:
-                        if item['type'] == 'field':
-                            module = item['module']
-                            if module not in selected_counts:
-                                selected_counts[module] = 0
-                            if item['selected']:
-                                selected_counts[module] += 1
-                                total_selected += 1
-                    
-                    summary_text = f"Selected: {total_selected} total"
-                    for module, count in selected_counts.items():
-                        module_display = module.replace('_', ' ').title()
-                        summary_text += f" | {module_display}: {count}"
-                    
-                    if len(summary_text) < width:
-                        stdscr.addstr(summary_y + 1, 0, summary_text)
-                    
-                    # Scroll indicator
-                    if len(all_fields) > visible_height:
-                        scroll_info = f"Line {current_item + 1} of {len(all_fields)}"
-                        stdscr.addstr(summary_y + 2, width - len(scroll_info) - 1, scroll_info)
-                
-                stdscr.refresh()
-            
-            # Main interaction loop
-            while True:
-                try:
-                    draw_interface()
-                    key = stdscr.getch()
-                    
-                    if key == ord('q') or key == ord('Q'):
-                        return None  # User cancelled
-                    elif key == 10 or key == 13:  # ENTER
-                        break
-                    elif key == curses.KEY_UP:
-                        # Move to previous selectable item
-                        new_pos = current_item - 1
-                        while new_pos >= 0 and all_fields[new_pos]['type'] != 'field':
-                            new_pos -= 1
-                        if new_pos >= 0:
-                            current_item = new_pos
-                    elif key == curses.KEY_DOWN:
-                        # Move to next selectable item
-                        new_pos = current_item + 1
-                        while new_pos < len(all_fields) and all_fields[new_pos]['type'] != 'field':
-                            new_pos += 1
-                        if new_pos < len(all_fields):
-                            current_item = new_pos
-                    elif key == 32:  # SPACE
-                        if (current_item < len(all_fields) and 
-                            all_fields[current_item]['type'] == 'field'):
-                            all_fields[current_item]['selected'] = not all_fields[current_item]['selected']
-                        
-                except KeyboardInterrupt:
-                    return None
-            
-            # Convert to expected format
-            selected_fields = {'current_weather': [], 'air_quality': []}
-            for item in all_fields:
-                if item['type'] == 'field' and item['selected']:
-                    selected_fields[item['module']].append(item['name'])
-            
-            return selected_fields
+        selected_fields = {'current_weather': [], 'air_quality': []}
         
-        # Run curses interface
-        try:
-            result = curses.wrapper(curses_main)
+        # Simplified category-based selection
+        for module_name, module_data in field_definitions.items():
+            print(f"\n{module_name.upper().replace('_', ' ')} MODULE:")
             
-            if result is None:
-                print("\nCustom selection cancelled.")
-                return None
-            
-            # Show final summary in regular terminal
-            total_selected = sum(len(fields) for fields in result.values())
-            print(f"\n" + "="*60)
-            print(f"SELECTION SUMMARY: {total_selected} fields selected")
-            print("="*60)
-            
-            for module_name, fields in result.items():
-                module_display = module_name.replace('_', ' ').title()
-                print(f"{module_display}: {len(fields)} fields")
-                
-                if fields:
-                    # Show first few selected field names
-                    field_names = []
-                    for field_name in fields:
-                        # Find display name
-                        for module_data in field_definitions.values():
-                            for category_data in module_data['categories'].values():
-                                if field_name in category_data['fields']:
-                                    field_names.append(category_data['fields'][field_name]['display_name'])
-                                    break
+            for category_name, category_data in module_data['categories'].items():
+                while True:
+                    try:
+                        choice = input(f"  Enable {category_data['display_name']} fields? [y/n]: ").strip().lower()
+                    except (KeyboardInterrupt, EOFError):
+                        print("\nInstallation cancelled by user.")
+                        sys.exit(1)
                     
-                    if field_names:
-                        display_list = ', '.join(field_names[:3])
-                        if len(field_names) > 3:
-                            display_list += f" (and {len(field_names) - 3} more)"
-                        print(f"  {display_list}")
-            
-            if total_selected == 0:
-                print("\nWarning: No fields selected. Using 'standard' defaults instead.")
-                return None
-            
-            return result
-            
-        except Exception as e:
-            print(f"\nError with custom selection interface: {e}")
-            print("Falling back to 'standard' field selection.")
-            return None
+                    if choice in ['y', 'yes']:
+                        # Add all fields in this category
+                        for field_name in category_data['fields'].keys():
+                            selected_fields[module_name].append(field_name)
+                        print(f"    ✓ {category_data['display_name']} enabled")
+                        break
+                    elif choice in ['n', 'no']:
+                        print(f"    ○ {category_data['display_name']} disabled")
+                        break
+                    else:
+                        print("    Please enter 'y' for yes or 'n' for no")
+        
+        return selected_fields
     
     def confirm_selection(self, complexity_level, field_count_estimate):
         """Confirm the user's selection before proceeding."""
@@ -432,7 +228,7 @@ class FieldSelectionHelper:
 
 
 class DatabaseManager:
-    """Manages database schema creation during installation."""
+    """Manages database schema creation during installation - FIXED VERSION."""
     
     def __init__(self, config_dict):
         self.config_dict = config_dict
@@ -479,6 +275,7 @@ class DatabaseManager:
     def _check_existing_fields(self):
         """Check which OpenWeather fields already exist in database."""
         try:
+            # FIXED: Use proper db_binding detection like AirVisual extension
             db_binding = self.config_dict.get('DataBindings', {}).get('wx_binding', 'wx_binding')
             
             with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
@@ -494,9 +291,14 @@ class DatabaseManager:
             return []
     
     def _add_missing_fields(self, missing_fields, field_mappings):
-        """Add missing database fields using weectl commands."""
+        """Add missing database fields using weectl commands - FIXED VERSION."""
         created_count = 0
-        config_path = self.config_dict.get('config_path', '/etc/weewx/weewx.conf')
+        
+        # FIXED: Use AirVisual extension pattern for config_path
+        config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
+        
+        # FIXED: Use AirVisual extension pattern for db_binding
+        db_binding = self.config_dict.get('DataBindings', {}).get('wx_binding', 'wx_binding')
         
         # Find weectl executable
         weectl_path = self._find_weectl()
@@ -511,12 +313,18 @@ class DatabaseManager:
             try:
                 print(f"  Adding field '{field_name}' ({field_type})...")
                 
-                cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
+                # FIXED: Use complete command structure from AirVisual extension
+                cmd = [
+                    weectl_path, 'database', 'add-column', field_name,
+                    '--config', config_path,
+                    '--binding', db_binding,
+                    '-y'
+                ]
                 
                 # Only add --type for REAL/INTEGER (weectl limitation)
                 if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, '--type')
-                    cmd.insert(-2, field_type)
+                    cmd.insert(-3, '--type')
+                    cmd.insert(-3, field_type)
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
@@ -571,7 +379,7 @@ class DatabaseManager:
 
 
 class OpenWeatherInstaller(ExtensionInstaller):
-    """Enhanced installer with interactive field selection."""
+    """Enhanced installer with interactive field selection - FIXED VERSION."""
     
     def __init__(self):
         super(OpenWeatherInstaller, self).__init__(
@@ -612,7 +420,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
         )
     
     def configure(self, engine):
-        """Enhanced installation with interactive field selection."""
+        """Enhanced installation with interactive field selection - FIXED VERSION."""
         
         print("\n" + "="*80)
         print("WEEWX OPENWEATHER EXTENSION INSTALLATION")
@@ -639,7 +447,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
                 # Custom field selection
                 field_definitions = field_helper.field_definitions
                 selected_fields = ui.show_custom_selection(field_definitions)
-                if selected_fields is None:
+                if selected_fields is None or not any(selected_fields.values()):
                     # User selected no fields, fall back to standard
                     complexity = 'standard'
                     selected_fields = field_helper.get_selected_fields('standard')
@@ -658,8 +466,8 @@ class OpenWeatherInstaller(ExtensionInstaller):
             db_manager = DatabaseManager(engine.config_dict)
             created_count = db_manager.create_database_fields(field_mappings)
             
-            # Step 6: Write configuration
-            self._write_enhanced_config(engine, api_key, modules, complexity, selected_fields)
+            # Step 6: Write configuration - FIXED VERSION
+            self._write_configuration(engine, api_key, modules, complexity, selected_fields)
             
             # Step 7: Setup unit system
             self._setup_unit_system()
@@ -773,67 +581,67 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         return modules
     
-    def _write_enhanced_config(self, engine, api_key, modules, complexity, selected_fields):
-        """Write enhanced configuration to weewx.conf."""
+    def _write_configuration(self, engine, api_key, modules, complexity, selected_fields):
+        """Write configuration to weewx.conf - FIXED VERSION using AirVisual pattern."""
         
-        # Update the service configuration
+        # FIXED: Use simple direct dictionary assignment like AirVisual extension
         config_dict = engine.config_dict
         
-        # Ensure OpenWeatherService section exists
-        if 'OpenWeatherService' not in config_dict:
-            config_dict['OpenWeatherService'] = configobj.Section(config_dict, [], config_dict, name='OpenWeatherService')
+        # Create OpenWeatherService configuration - SIMPLE APPROACH
+        config_dict['OpenWeatherService'] = {
+            'enable': True,
+            'api_key': api_key,
+            'timeout': 30,
+            'log_success': False,
+            'log_errors': True,
+            'modules': modules,
+            'intervals': {
+                'current_weather': 3600,
+                'air_quality': 7200
+            },
+            'field_selection': {
+                'complexity_level': complexity,
+                'selected_fields': selected_fields  # Simple storage
+            }
+        }
         
-        service_config = config_dict['OpenWeatherService']
+        # Register service using AirVisual pattern
+        if 'Engine' not in config_dict:
+            config_dict['Engine'] = {}
+        if 'Services' not in config_dict['Engine']:
+            config_dict['Engine']['Services'] = {}
         
-        # Basic configuration
-        service_config['enable'] = True
-        service_config['api_key'] = api_key
-        service_config['timeout'] = 30
-        service_config['log_success'] = False
-        service_config['log_errors'] = True
+        # Get current data_services list
+        services = config_dict['Engine']['Services']
+        current_data_services = services.get('data_services', '')
         
-        # Module configuration
-        if 'modules' not in service_config:
-            service_config['modules'] = configobj.Section(service_config, [], service_config, name='modules')
-        
-        service_config['modules']['current_weather'] = modules.get('current_weather', True)
-        service_config['modules']['air_quality'] = modules.get('air_quality', True)
-        
-        # Interval configuration
-        if 'intervals' not in service_config:
-            service_config['intervals'] = configobj.Section(service_config, [], service_config, name='intervals')
-        
-        service_config['intervals']['current_weather'] = 3600
-        service_config['intervals']['air_quality'] = 7200
-        
-        # Field selection configuration
-        if 'field_selection' not in service_config:
-            service_config['field_selection'] = configobj.Section(service_config, [], service_config, name='field_selection')
-        
-        field_config = service_config['field_selection']
-        
-        if complexity != 'custom':
-            field_config['complexity_level'] = complexity
+        # Convert to list for manipulation
+        if isinstance(current_data_services, str):
+            data_services_list = [s.strip() for s in current_data_services.split(',') if s.strip()]
         else:
-            field_config['complexity_level'] = 'custom'
+            data_services_list = list(current_data_services) if current_data_services else []
+        
+        # Add our service if not already present
+        openweather_service = 'user.openweather.OpenWeatherService'
+        if openweather_service not in data_services_list:
+            # Insert after StdConvert but before StdQC for proper data flow
+            insert_position = len(data_services_list)  # Default to end
+            for i, service in enumerate(data_services_list):
+                if 'StdConvert' in service:
+                    insert_position = i + 1
+                    break
+                elif 'StdQC' in service:
+                    insert_position = i
+                    break
             
-            # Add custom field selections
-            for module, fields in selected_fields.items():
-                if module not in field_config:
-                    field_config[module] = configobj.Section(field_config, [], field_config, name=module)
-                
-                module_config = field_config[module]
-                
-                # Clear existing fields
-                for key in list(module_config.keys()):
-                    del module_config[key]
-                
-                # Add selected fields
-                for field in fields:
-                    module_config[field] = True
+            data_services_list.insert(insert_position, openweather_service)
+            
+            # Update configuration
+            services['data_services'] = ', '.join(data_services_list)
     
     def _setup_unit_system(self):
         """Setup unit system extensions for OpenWeather data."""
+        import weewx.units
         
         # Add concentration unit group for air quality
         if 'group_concentration' not in weewx.units.USUnits:
