@@ -858,7 +858,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
             author_email="",
             
             # FIXED: Use data_services parameter for automatic install/uninstall
-            data_services='user.openweather.OpenWeatherService',
+            data_services=['user.openweather.OpenWeatherService'],
             
             files=[
                 ('bin/user', ['bin/user/openweather.py']),
