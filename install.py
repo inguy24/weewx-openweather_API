@@ -343,9 +343,9 @@ class TerminalUI:
                 sys.exit(1)
             
             if confirm in ['y', 'yes']:
-                return True
+                return 'true'  # Return string instead of boolean
             elif confirm in ['n', 'no']:
-                return False
+                return 'false'  # Return string instead of boolean
             else:
                 print("Please enter 'y' for yes or 'n' for no")
 
@@ -618,9 +618,10 @@ class OpenWeatherConfigurator:
             
             # Step 4: Confirmation
             field_count = field_helper.estimate_field_count(selected_fields)
-            if not ui.confirm_selection(complexity, field_count):
+            confirmation = ui.confirm_selection(complexity, field_count)
+            if confirmation != 'true':  # Check string value
                 print("\nConfiguration cancelled by user.")
-                return False
+                return 'false'  # Return string
             
             # Step 5: Database schema creation
             field_mappings = field_helper.get_database_field_mappings(selected_fields)
@@ -652,11 +653,11 @@ class OpenWeatherConfigurator:
             print("- weewx-environmental-health (health risk assessment)")
             print("="*80)
             
-            return True
+            return 'true'  # Return string instead of boolean
             
         except Exception as e:
             print(f"\nConfiguration failed: {e}")
-            return False
+            return 'false'  # Return string instead of boolean
     
     def _prompt_api_key(self):
         """Prompt for OpenWeatherMap API key with validation."""
@@ -711,11 +712,11 @@ class OpenWeatherConfigurator:
                 sys.exit(1)
             
             if choice in ['', 'y', 'yes']:
-                modules['current_weather'] = True
+                modules['current_weather'] = 'true'  # String value
                 print("✓ Current weather module enabled")
                 break
             elif choice in ['n', 'no']:
-                modules['current_weather'] = False
+                modules['current_weather'] = 'false'  # String value
                 print("○ Current weather module disabled")
                 break
             else:
@@ -730,11 +731,11 @@ class OpenWeatherConfigurator:
                 sys.exit(1)
             
             if choice in ['', 'y', 'yes']:
-                modules['air_quality'] = True
+                modules['air_quality'] = 'true'  # String value
                 print("✓ Air quality module enabled")
                 break
             elif choice in ['n', 'no']:
-                modules['air_quality'] = False
+                modules['air_quality'] = 'false'  # String value
                 print("○ Air quality module disabled")
                 break
             else:
@@ -767,8 +768,18 @@ class OpenWeatherConfigurator:
         if 'modules' not in service_config:
             service_config['modules'] = {}
         
-        service_config['modules']['current_weather'] = 'true' if modules.get('current_weather', True) else 'false'
-        service_config['modules']['air_quality'] = 'true' if modules.get('air_quality', True) else 'false'
+        # Handle both string and boolean values from modules dict
+        current_weather_val = modules.get('current_weather', 'true')
+        if isinstance(current_weather_val, bool):
+            service_config['modules']['current_weather'] = 'true' if current_weather_val else 'false'
+        else:
+            service_config['modules']['current_weather'] = str(current_weather_val)
+            
+        air_quality_val = modules.get('air_quality', 'true')
+        if isinstance(air_quality_val, bool):
+            service_config['modules']['air_quality'] = 'true' if air_quality_val else 'false'
+        else:
+            service_config['modules']['air_quality'] = str(air_quality_val)
         
         # Interval configuration - use dictionary assignment with string values
         if 'intervals' not in service_config:
@@ -884,7 +895,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
         configurator = OpenWeatherConfigurator(engine.config_dict)
         configuration_result = configurator.run_interactive_setup()
         
-        if configuration_result:
+        if configuration_result == 'true':  # Check string value
             print("\n" + "="*80)
             print("INSTALLATION COMPLETED SUCCESSFULLY!")
             print("="*80)
@@ -901,7 +912,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
             print("  sudo journalctl -u weewx -f")
             print("="*80)
         
-        return configuration_result
+        return configuration_result == 'true'  # Convert string to boolean for ExtensionInstaller
 
 
 if __name__ == '__main__':
