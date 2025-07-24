@@ -585,18 +585,18 @@ class OpenWeatherInstaller(ExtensionInstaller):
             ],
             config={
                 'OpenWeatherService': {
-                    'enable': True,
+                    'enable': 'True',
                     'api_key': 'REPLACE_WITH_YOUR_API_KEY',
-                    'timeout': 30,
-                    'log_success': False,
-                    'log_errors': True,
+                    'timeout': '30',
+                    'log_success': 'False',
+                    'log_errors': 'True',
                     'modules': {
-                        'current_weather': True,
-                        'air_quality': True
+                        'current_weather': 'True',
+                        'air_quality': 'True'
                     },
                     'intervals': {
-                        'current_weather': 3600,
-                        'air_quality': 7200
+                        'current_weather': '3600',
+                        'air_quality': '7200'
                     },
                     'field_selection': {
                         'complexity_level': 'standard'
