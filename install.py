@@ -511,12 +511,11 @@ class DatabaseManager:
             try:
                 print(f"  Adding field '{field_name}' ({field_type})...")
                 
-                cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
+                cmd = [weectl_path, 'database', 'add-column', field_name, f'--config={config_path}', '-y']
                 
                 # Only add --type for REAL/INTEGER (weectl limitation)
                 if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, '--type')
-                    cmd.insert(-2, field_type)
+                    cmd.insert(-2, f'--type={field_type}')
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
@@ -784,19 +783,19 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         service_config = config_dict['OpenWeatherService']
         
-        # Basic configuration
-        service_config['enable'] = True
+        # Basic configuration (convert booleans to strings for ConfigObj)
+        service_config['enable'] = 'True'
         service_config['api_key'] = api_key
         service_config['timeout'] = 30
-        service_config['log_success'] = False
-        service_config['log_errors'] = True
+        service_config['log_success'] = 'False'
+        service_config['log_errors'] = 'True'
         
         # Module configuration
         if 'modules' not in service_config:
             service_config['modules'] = {}
         
-        service_config['modules']['current_weather'] = modules.get('current_weather', True)
-        service_config['modules']['air_quality'] = modules.get('air_quality', True)
+        service_config['modules']['current_weather'] = 'True' if modules.get('current_weather', True) else 'False'
+        service_config['modules']['air_quality'] = 'True' if modules.get('air_quality', True) else 'False'
         
         # Interval configuration
         if 'intervals' not in service_config:
@@ -827,9 +826,9 @@ class OpenWeatherInstaller(ExtensionInstaller):
                 for key in list(module_config.keys()):
                     del module_config[key]
                 
-                # Add selected fields
+                # Add selected fields (convert to strings)
                 for field in fields:
-                    module_config[field] = True
+                    module_config[field] = 'True'
     
     def _register_service(self, config_dict):
         """Manual service registration like AirVisual extension."""
