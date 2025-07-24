@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-WeeWX OpenWeather Extension Installer - Enhanced with Field Selection
+WeeWX OpenWeather Extension Installer - Reorganized with Proper Service Registration
 
-Provides interactive installation with field selection and dynamic database schema management.
+Provides interactive installation with field selection and automatic service management.
+Fixes uninstall issues and architectural separation of concerns.
 
 Copyright (C) 2025 WeeWX OpenWeather API Extension
 """
@@ -14,7 +15,6 @@ import yaml
 import subprocess
 import time
 import configobj
-import curses
 from typing import Dict, List, Optional, Any
 
 try:
@@ -86,6 +86,7 @@ class TerminalUI:
     
     def show_custom_selection(self, field_definitions):
         """Show single-screen checklist for custom field selection using curses."""
+        import curses
         
         def curses_main(stdscr):
             # Initialize curses
@@ -479,6 +480,7 @@ class DatabaseManager:
     def _check_existing_fields(self):
         """Check which OpenWeather fields already exist in database."""
         try:
+            # FIXED: Use standard WeeWX binding name directly (eliminates Section object warning)
             db_binding = 'wx_binding'
             
             with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
@@ -496,7 +498,7 @@ class DatabaseManager:
     def _add_missing_fields(self, missing_fields, field_mappings):
         """Add missing database fields using weectl commands."""
         created_count = 0
-        config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
+        config_path = self.config_dict.get('config_path', '/etc/weewx/weewx.conf')
         
         # Find weectl executable
         weectl_path = self._find_weectl()
@@ -511,11 +513,12 @@ class DatabaseManager:
             try:
                 print(f"  Adding field '{field_name}' ({field_type})...")
                 
-                cmd = [weectl_path, 'database', 'add-column', field_name, f'--config={config_path}', '-y']
+                cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
                 
                 # Only add --type for REAL/INTEGER (weectl limitation)
                 if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, f'--type={field_type}')
+                    cmd.insert(-2, '--type')
+                    cmd.insert(-2, field_type)
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
@@ -569,48 +572,17 @@ class DatabaseManager:
         print("  " + "-" * 50)
 
 
-class OpenWeatherInstaller(ExtensionInstaller):
-    """Enhanced installer with interactive field selection."""
+class OpenWeatherConfigurator:
+    """Handles all interactive configuration - separated from installer mechanics."""
     
-    def __init__(self):
-        super(OpenWeatherInstaller, self).__init__(
-            version="1.0.0",
-            name="OpenWeather",
-            description="OpenWeatherMap API integration with modular field selection",
-            author="WeeWX OpenWeather Extension",
-            author_email="",
-            files=[
-                ('bin/user', ['bin/user/openweather.py']),
-                ('', ['field_selection_defaults.yaml', 'openweather_fields.yaml'])
-            ],
-            config={
-                'OpenWeatherService': {
-                    'enable': 'True',
-                    'api_key': 'REPLACE_WITH_YOUR_API_KEY',
-                    'timeout': '30',
-                    'log_success': 'False',
-                    'log_errors': 'True',
-                    'modules': {
-                        'current_weather': 'True',
-                        'air_quality': 'True'
-                    },
-                    'intervals': {
-                        'current_weather': '3600',
-                        'air_quality': '7200'
-                    },
-                    'field_selection': {
-                        'complexity_level': 'standard'
-                    }
-                }
-                # NOTE: Engine section deliberately omitted to prevent uninstall deletion bug
-            }
-        )
+    def __init__(self, config_dict):
+        self.config_dict = config_dict
     
-    def configure(self, engine):
-        """Enhanced installation with interactive field selection."""
+    def run_interactive_setup(self):
+        """Complete interactive configuration process."""
         
         print("\n" + "="*80)
-        print("WEEWX OPENWEATHER EXTENSION INSTALLATION")
+        print("WEEWX OPENWEATHER EXTENSION CONFIGURATION")
         print("="*80)
         print("This extension collects weather and air quality data from OpenWeatherMap.")
         print("You'll be guided through API setup and field selection.")
@@ -645,30 +617,27 @@ class OpenWeatherInstaller(ExtensionInstaller):
             # Step 4: Confirmation
             field_count = field_helper.estimate_field_count(selected_fields)
             if not ui.confirm_selection(complexity, field_count):
-                print("\nInstallation cancelled by user.")
+                print("\nConfiguration cancelled by user.")
                 return False
             
             # Step 5: Database schema creation
             field_mappings = field_helper.get_database_field_mappings(selected_fields)
-            db_manager = DatabaseManager(engine.config_dict)
+            db_manager = DatabaseManager(self.config_dict)
             created_count = db_manager.create_database_fields(field_mappings)
             
             # Step 6: Write configuration
-            self._write_enhanced_config(engine, api_key, modules, complexity, selected_fields)
+            self._write_enhanced_config(api_key, modules, complexity, selected_fields)
             
-            # Step 7: Manual service registration (CRITICAL FIX)
-            self._register_service(engine.config_dict)
-            
-            # Step 8: Setup unit system
+            # Step 7: Setup unit system
             self._setup_unit_system()
             
             print("\n" + "="*80)
-            print("INSTALLATION COMPLETED SUCCESSFULLY!")
+            print("CONFIGURATION COMPLETED SUCCESSFULLY!")
             print("="*80)
             print(f"✓ API key configured")
             print(f"✓ Data collection level: {complexity.title()}")
             print(f"✓ Database fields created: {created_count}")
-            print(f"✓ Service registered: user.openweather.OpenWeatherService")
+            print(f"✓ Service registration: Automatic via ExtensionInstaller")
             print(f"✓ Unit system configured")
             print("-" * 80)
             print("Next steps:")
@@ -684,7 +653,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
             return True
             
         except Exception as e:
-            print(f"\nInstallation failed: {e}")
+            print(f"\nConfiguration failed: {e}")
             return False
     
     def _prompt_api_key(self):
@@ -702,7 +671,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
             try:
                 api_key = input("Enter your OpenWeatherMap API key: ").strip()
             except (KeyboardInterrupt, EOFError):
-                print("\nInstallation cancelled by user.")
+                print("\nConfiguration cancelled by user.")
                 sys.exit(1)
             
             if not api_key:
@@ -736,7 +705,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
             try:
                 choice = input("Enable current weather data (temperature, humidity, pressure, wind)? [Y/n]: ").strip().lower()
             except (KeyboardInterrupt, EOFError):
-                print("\nInstallation cancelled by user.")
+                print("\nConfiguration cancelled by user.")
                 sys.exit(1)
             
             if choice in ['', 'y', 'yes']:
@@ -755,7 +724,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
             try:
                 choice = input("Enable air quality data (PM2.5, ozone, AQI)? [Y/n]: ").strip().lower()
             except (KeyboardInterrupt, EOFError):
-                print("\nInstallation cancelled by user.")
+                print("\nConfiguration cancelled by user.")
                 sys.exit(1)
             
             if choice in ['', 'y', 'yes']:
@@ -771,125 +740,72 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         return modules
     
-    def _write_enhanced_config(self, engine, api_key, modules, complexity, selected_fields):
+    def _write_enhanced_config(self, api_key, modules, complexity, selected_fields):
         """Write enhanced configuration to weewx.conf."""
         
-        try:
-            # Update the service configuration
-            config_dict = engine.config_dict
+        # Update the service configuration
+        config_dict = self.config_dict
+        
+        # Ensure OpenWeatherService section exists
+        if 'OpenWeatherService' not in config_dict:
+            config_dict['OpenWeatherService'] = configobj.Section(config_dict, [], config_dict, name='OpenWeatherService')
+        
+        service_config = config_dict['OpenWeatherService']
+        
+        # Basic configuration
+        service_config['enable'] = True
+        service_config['api_key'] = api_key
+        service_config['timeout'] = 30
+        service_config['log_success'] = False
+        service_config['log_errors'] = True
+        
+        # Module configuration
+        if 'modules' not in service_config:
+            service_config['modules'] = configobj.Section(service_config, [], service_config, name='modules')
+        
+        service_config['modules']['current_weather'] = modules.get('current_weather', True)
+        service_config['modules']['air_quality'] = modules.get('air_quality', True)
+        
+        # Interval configuration
+        if 'intervals' not in service_config:
+            service_config['intervals'] = configobj.Section(service_config, [], service_config, name='intervals')
+        
+        service_config['intervals']['current_weather'] = 3600
+        service_config['intervals']['air_quality'] = 7200
+        
+        # Field selection configuration
+        if 'field_selection' not in service_config:
+            service_config['field_selection'] = configobj.Section(service_config, [], service_config, name='field_selection')
+        
+        field_config = service_config['field_selection']
+        
+        if complexity != 'custom':
+            field_config['complexity_level'] = complexity
+        else:
+            field_config['complexity_level'] = 'custom'
             
-            # Ensure OpenWeatherService section exists
-            if 'OpenWeatherService' not in config_dict:
-                config_dict['OpenWeatherService'] = {}
-            
-            service_config = config_dict['OpenWeatherService']
-            
-            # Basic configuration (convert all values to strings for ConfigObj)
-            service_config['enable'] = 'True'
-            service_config['api_key'] = str(api_key)
-            service_config['timeout'] = '30'
-            service_config['log_success'] = 'False'
-            service_config['log_errors'] = 'True'
-            
-            # Module configuration
-            if 'modules' not in service_config:
-                service_config['modules'] = {}
-            
-            service_config['modules']['current_weather'] = 'True' if modules.get('current_weather', True) else 'False'
-            service_config['modules']['air_quality'] = 'True' if modules.get('air_quality', True) else 'False'
-            
-            # Interval configuration (convert to strings)
-            if 'intervals' not in service_config:
-                service_config['intervals'] = {}
-            
-            service_config['intervals']['current_weather'] = '3600'
-            service_config['intervals']['air_quality'] = '7200'
-            
-            # Field selection configuration
-            if 'field_selection' not in service_config:
-                service_config['field_selection'] = {}
-            
-            field_config = service_config['field_selection']
-            
-            if complexity != 'custom':
-                field_config['complexity_level'] = str(complexity)
-            else:
-                field_config['complexity_level'] = 'custom'
+            # Add custom field selections
+            for module, fields in selected_fields.items():
+                if module not in field_config:
+                    field_config[module] = configobj.Section(field_config, [], field_config, name=module)
                 
-                # Add custom field selections (ensure all values are strings)
-                for module, fields in selected_fields.items():
-                    if module not in field_config:
-                        field_config[str(module)] = {}
-                    
-                    module_config = field_config[str(module)]
-                    
-                    # Clear existing fields
-                    for key in list(module_config.keys()):
-                        del module_config[key]
-                    
-                    # Add selected fields (convert to strings)
-                    if isinstance(fields, list):
-                        for field in fields:
-                            module_config[str(field)] = 'True'
-                    elif fields == 'all':
-                        module_config['all_fields'] = 'True'
-                        
-        except Exception as e:
-            print(f"Error in _write_enhanced_config: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
-    
-    def _register_service(self, config_dict):
-        """Manual service registration like AirVisual extension."""
-        print("\n" + "="*60)
-        print("SERVICE REGISTRATION")
-        print("="*60)
-        print("Registering service in WeeWX engine...")
-        
-        # Ensure Engine section exists
-        if 'Engine' not in config_dict:
-            config_dict['Engine'] = {}
-        if 'Services' not in config_dict['Engine']:
-            config_dict['Engine']['Services'] = {}
-        
-        # Get current data_services list
-        services = config_dict['Engine']['Services']
-        current_data_services = services.get('data_services', '')
-        
-        # Convert to list for manipulation
-        if isinstance(current_data_services, str):
-            data_services_list = [s.strip() for s in current_data_services.split(',') if s.strip()]
-        else:
-            data_services_list = list(current_data_services) if current_data_services else []
-        
-        # Add our service if not already present
-        openweather_service = 'user.openweather.OpenWeatherService'
-        if openweather_service not in data_services_list:
-            # Insert after StdConvert but before StdQC for proper data flow
-            insert_position = len(data_services_list)  # Default to end
-            for i, service in enumerate(data_services_list):
-                if 'StdConvert' in service:
-                    insert_position = i + 1
-                    break
-                elif 'StdQC' in service:
-                    insert_position = i
-                    break
-            
-            data_services_list.insert(insert_position, openweather_service)
-            
-            # Update configuration (PRESERVES existing services)
-            services['data_services'] = ', '.join(data_services_list)
-            print(f"  ✓ Added {openweather_service} to data_services")
-        else:
-            print(f"  ✓ {openweather_service} already registered")
+                module_config = field_config[module]
+                
+                # Clear existing fields
+                for key in list(module_config.keys()):
+                    del module_config[key]
+                
+                # Add selected fields
+                for field in fields:
+                    module_config[field] = True
     
     def _setup_unit_system(self):
         """Setup unit system extensions for OpenWeather data."""
+        
+        # Add concentration unit group for air quality
         try:
             import weewx.units
             
-            # Add concentration unit group for air quality
             if 'group_concentration' not in weewx.units.USUnits:
                 weewx.units.USUnits['group_concentration'] = 'microgram_per_meter_cubed'
                 weewx.units.MetricUnits['group_concentration'] = 'microgram_per_meter_cubed'
@@ -903,10 +819,85 @@ class OpenWeatherInstaller(ExtensionInstaller):
             if 'microgram_per_meter_cubed' not in weewx.units.default_unit_label_dict:
                 weewx.units.default_unit_label_dict['microgram_per_meter_cubed'] = ' μg/m³'
             
-            print("  ✓ Unit system mappings configured")
+            print("  ✓ Unit system configured for OpenWeather fields")
             
         except Exception as e:
             print(f"  Warning: Could not setup unit system: {e}")
+
+
+class OpenWeatherInstaller(ExtensionInstaller):
+    """Main installer - handles WeeWX extension mechanics with proper service registration."""
+    
+    def __init__(self):
+        super(OpenWeatherInstaller, self).__init__(
+            version="1.0.0",
+            name="OpenWeather",
+            description="OpenWeatherMap API integration with modular field selection",
+            author="WeeWX OpenWeather Extension",
+            author_email="",
+            
+            # FIXED: Use data_services parameter for automatic install/uninstall
+            data_services='user.openweather.OpenWeatherService',
+            
+            files=[
+                ('bin/user', ['bin/user/openweather.py']),
+                ('', ['field_selection_defaults.yaml', 'openweather_fields.yaml'])
+            ],
+            config={
+                'OpenWeatherService': {
+                    'enable': True,
+                    'api_key': 'REPLACE_WITH_YOUR_API_KEY',
+                    'timeout': 30,
+                    'log_success': False,
+                    'log_errors': True,
+                    'modules': {
+                        'current_weather': True,
+                        'air_quality': True
+                    },
+                    'intervals': {
+                        'current_weather': 3600,
+                        'air_quality': 7200
+                    },
+                    'field_selection': {
+                        'complexity_level': 'standard'
+                    }
+                }
+                # NO Engine section - handled automatically by data_services parameter
+            }
+        )
+    
+    def configure(self, engine):
+        """Orchestrates installation - delegates to configurator for separation of concerns."""
+        
+        print("\n" + "="*80)
+        print("WEEWX OPENWEATHER EXTENSION INSTALLATION")
+        print("="*80)
+        print("Installing files and registering service...")
+        print("Service registration: Automatic via ExtensionInstaller data_services parameter")
+        print("-" * 80)
+        
+        # Delegate all interactive configuration to separate class
+        configurator = OpenWeatherConfigurator(engine.config_dict)
+        configuration_result = configurator.run_interactive_setup()
+        
+        if configuration_result:
+            print("\n" + "="*80)
+            print("INSTALLATION COMPLETED SUCCESSFULLY!")
+            print("="*80)
+            print("✓ Files installed")
+            print("✓ Service registered automatically: user.openweather.OpenWeatherService")
+            print("✓ Interactive configuration completed")
+            print("✓ Database schema extended")
+            print("✓ Unit system configured")
+            print("-" * 80)
+            print("IMPORTANT: Restart WeeWX to activate the extension:")
+            print("  sudo systemctl restart weewx")
+            print()
+            print("Check logs for successful operation:")
+            print("  sudo journalctl -u weewx -f")
+            print("="*80)
+        
+        return configuration_result
 
 
 if __name__ == '__main__':
