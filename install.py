@@ -774,61 +774,71 @@ class OpenWeatherInstaller(ExtensionInstaller):
     def _write_enhanced_config(self, engine, api_key, modules, complexity, selected_fields):
         """Write enhanced configuration to weewx.conf."""
         
-        # Update the service configuration
-        config_dict = engine.config_dict
-        
-        # Ensure OpenWeatherService section exists
-        if 'OpenWeatherService' not in config_dict:
-            config_dict['OpenWeatherService'] = {}
-        
-        service_config = config_dict['OpenWeatherService']
-        
-        # Basic configuration (convert all values to strings for ConfigObj)
-        service_config['enable'] = 'True'
-        service_config['api_key'] = str(api_key)
-        service_config['timeout'] = '30'
-        service_config['log_success'] = 'False'
-        service_config['log_errors'] = 'True'
-        
-        # Module configuration
-        if 'modules' not in service_config:
-            service_config['modules'] = {}
-        
-        service_config['modules']['current_weather'] = 'True' if modules.get('current_weather', True) else 'False'
-        service_config['modules']['air_quality'] = 'True' if modules.get('air_quality', True) else 'False'
-        
-        # Interval configuration (convert to strings)
-        if 'intervals' not in service_config:
-            service_config['intervals'] = {}
-        
-        service_config['intervals']['current_weather'] = '3600'
-        service_config['intervals']['air_quality'] = '7200'
-        
-        # Field selection configuration
-        if 'field_selection' not in service_config:
-            service_config['field_selection'] = {}
-        
-        field_config = service_config['field_selection']
-        
-        if complexity != 'custom':
-            field_config['complexity_level'] = complexity
-        else:
-            field_config['complexity_level'] = 'custom'
+        try:
+            # Update the service configuration
+            config_dict = engine.config_dict
             
-            # Add custom field selections
-            for module, fields in selected_fields.items():
-                if module not in field_config:
-                    field_config[module] = {}
+            # Ensure OpenWeatherService section exists
+            if 'OpenWeatherService' not in config_dict:
+                config_dict['OpenWeatherService'] = {}
+            
+            service_config = config_dict['OpenWeatherService']
+            
+            # Basic configuration (convert all values to strings for ConfigObj)
+            service_config['enable'] = 'True'
+            service_config['api_key'] = str(api_key)
+            service_config['timeout'] = '30'
+            service_config['log_success'] = 'False'
+            service_config['log_errors'] = 'True'
+            
+            # Module configuration
+            if 'modules' not in service_config:
+                service_config['modules'] = {}
+            
+            service_config['modules']['current_weather'] = 'True' if modules.get('current_weather', True) else 'False'
+            service_config['modules']['air_quality'] = 'True' if modules.get('air_quality', True) else 'False'
+            
+            # Interval configuration (convert to strings)
+            if 'intervals' not in service_config:
+                service_config['intervals'] = {}
+            
+            service_config['intervals']['current_weather'] = '3600'
+            service_config['intervals']['air_quality'] = '7200'
+            
+            # Field selection configuration
+            if 'field_selection' not in service_config:
+                service_config['field_selection'] = {}
+            
+            field_config = service_config['field_selection']
+            
+            if complexity != 'custom':
+                field_config['complexity_level'] = str(complexity)
+            else:
+                field_config['complexity_level'] = 'custom'
                 
-                module_config = field_config[module]
-                
-                # Clear existing fields
-                for key in list(module_config.keys()):
-                    del module_config[key]
-                
-                # Add selected fields (convert to strings)
-                for field in fields:
-                    module_config[field] = 'True'
+                # Add custom field selections (ensure all values are strings)
+                for module, fields in selected_fields.items():
+                    if module not in field_config:
+                        field_config[str(module)] = {}
+                    
+                    module_config = field_config[str(module)]
+                    
+                    # Clear existing fields
+                    for key in list(module_config.keys()):
+                        del module_config[key]
+                    
+                    # Add selected fields (convert to strings)
+                    if isinstance(fields, list):
+                        for field in fields:
+                            module_config[str(field)] = 'True'
+                    elif fields == 'all':
+                        module_config['all_fields'] = 'True'
+                        
+        except Exception as e:
+            print(f"Error in _write_enhanced_config: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     def _register_service(self, config_dict):
         """Manual service registration like AirVisual extension."""
