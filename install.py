@@ -746,9 +746,11 @@ class OpenWeatherConfigurator:
         # Update the service configuration
         config_dict = self.config_dict
         
+        # FIXED: Use proper ConfigObj dictionary-style assignment instead of manual Section creation
+        
         # Ensure OpenWeatherService section exists
         if 'OpenWeatherService' not in config_dict:
-            config_dict['OpenWeatherService'] = configobj.Section(config_dict, [], config_dict, name='OpenWeatherService')
+            config_dict['OpenWeatherService'] = {}
         
         service_config = config_dict['OpenWeatherService']
         
@@ -759,23 +761,23 @@ class OpenWeatherConfigurator:
         service_config['log_success'] = False
         service_config['log_errors'] = True
         
-        # Module configuration
+        # Module configuration - use dictionary assignment
         if 'modules' not in service_config:
-            service_config['modules'] = configobj.Section(service_config, [], service_config, name='modules')
+            service_config['modules'] = {}
         
         service_config['modules']['current_weather'] = modules.get('current_weather', True)
         service_config['modules']['air_quality'] = modules.get('air_quality', True)
         
-        # Interval configuration
+        # Interval configuration - use dictionary assignment
         if 'intervals' not in service_config:
-            service_config['intervals'] = configobj.Section(service_config, [], service_config, name='intervals')
+            service_config['intervals'] = {}
         
         service_config['intervals']['current_weather'] = 3600
         service_config['intervals']['air_quality'] = 7200
         
-        # Field selection configuration
+        # Field selection configuration - use dictionary assignment
         if 'field_selection' not in service_config:
-            service_config['field_selection'] = configobj.Section(service_config, [], service_config, name='field_selection')
+            service_config['field_selection'] = {}
         
         field_config = service_config['field_selection']
         
@@ -784,10 +786,10 @@ class OpenWeatherConfigurator:
         else:
             field_config['complexity_level'] = 'custom'
             
-            # Add custom field selections
+            # Add custom field selections - use dictionary assignment
             for module, fields in selected_fields.items():
                 if module not in field_config:
-                    field_config[module] = configobj.Section(field_config, [], field_config, name=module)
+                    field_config[module] = {}
                 
                 module_config = field_config[module]
                 
