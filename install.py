@@ -496,7 +496,7 @@ class DatabaseManager:
     def _add_missing_fields(self, missing_fields, field_mappings):
         """Add missing database fields using weectl commands."""
         created_count = 0
-        config_path = self.config_dict.get('config_path', '/etc/weewx/weewx.conf')
+        config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
         
         # Find weectl executable
         weectl_path = self._find_weectl()
@@ -780,7 +780,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         # Ensure OpenWeatherService section exists
         if 'OpenWeatherService' not in config_dict:
-            config_dict['OpenWeatherService'] = configobj.Section(config_dict, [], config_dict, name='OpenWeatherService')
+            config_dict['OpenWeatherService'] = {}
         
         service_config = config_dict['OpenWeatherService']
         
@@ -793,21 +793,21 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         # Module configuration
         if 'modules' not in service_config:
-            service_config['modules'] = configobj.Section(service_config, [], service_config, name='modules')
+            service_config['modules'] = {}
         
         service_config['modules']['current_weather'] = modules.get('current_weather', True)
         service_config['modules']['air_quality'] = modules.get('air_quality', True)
         
         # Interval configuration
         if 'intervals' not in service_config:
-            service_config['intervals'] = configobj.Section(service_config, [], service_config, name='intervals')
+            service_config['intervals'] = {}
         
         service_config['intervals']['current_weather'] = 3600
         service_config['intervals']['air_quality'] = 7200
         
         # Field selection configuration
         if 'field_selection' not in service_config:
-            service_config['field_selection'] = configobj.Section(service_config, [], service_config, name='field_selection')
+            service_config['field_selection'] = {}
         
         field_config = service_config['field_selection']
         
@@ -819,7 +819,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
             # Add custom field selections
             for module, fields in selected_fields.items():
                 if module not in field_config:
-                    field_config[module] = configobj.Section(field_config, [], field_config, name=module)
+                    field_config[module] = {}
                 
                 module_config = field_config[module]
                 
@@ -840,9 +840,9 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         # Ensure Engine section exists
         if 'Engine' not in config_dict:
-            config_dict['Engine'] = configobj.Section(config_dict, [], config_dict, name='Engine')
+            config_dict['Engine'] = {}
         if 'Services' not in config_dict['Engine']:
-            config_dict['Engine']['Services'] = configobj.Section(config_dict['Engine'], [], config_dict['Engine'], name='Services')
+            config_dict['Engine']['Services'] = {}
         
         # Get current data_services list
         services = config_dict['Engine']['Services']
