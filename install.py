@@ -754,39 +754,39 @@ class OpenWeatherConfigurator:
         
         service_config = config_dict['OpenWeatherService']
         
-        # Basic configuration
-        service_config['enable'] = True
-        service_config['api_key'] = api_key
-        service_config['timeout'] = 30
-        service_config['log_success'] = False
-        service_config['log_errors'] = True
+        # Basic configuration - ALL VALUES AS STRINGS for ConfigObj
+        service_config['enable'] = 'true'
+        service_config['api_key'] = str(api_key)
+        service_config['timeout'] = '30'
+        service_config['log_success'] = 'false'
+        service_config['log_errors'] = 'true'
         
-        # Module configuration - use dictionary assignment
+        # Module configuration - use dictionary assignment with string values
         if 'modules' not in service_config:
             service_config['modules'] = {}
         
-        service_config['modules']['current_weather'] = modules.get('current_weather', True)
-        service_config['modules']['air_quality'] = modules.get('air_quality', True)
+        service_config['modules']['current_weather'] = 'true' if modules.get('current_weather', True) else 'false'
+        service_config['modules']['air_quality'] = 'true' if modules.get('air_quality', True) else 'false'
         
-        # Interval configuration - use dictionary assignment
+        # Interval configuration - use dictionary assignment with string values
         if 'intervals' not in service_config:
             service_config['intervals'] = {}
         
-        service_config['intervals']['current_weather'] = 3600
-        service_config['intervals']['air_quality'] = 7200
+        service_config['intervals']['current_weather'] = '3600'
+        service_config['intervals']['air_quality'] = '7200'
         
-        # Field selection configuration - use dictionary assignment
+        # Field selection configuration - use dictionary assignment with string values
         if 'field_selection' not in service_config:
             service_config['field_selection'] = {}
         
         field_config = service_config['field_selection']
         
         if complexity != 'custom':
-            field_config['complexity_level'] = complexity
+            field_config['complexity_level'] = str(complexity)
         else:
             field_config['complexity_level'] = 'custom'
             
-            # Add custom field selections - use dictionary assignment
+            # Add custom field selections - use dictionary assignment with string values
             for module, fields in selected_fields.items():
                 if module not in field_config:
                     field_config[module] = {}
@@ -797,9 +797,9 @@ class OpenWeatherConfigurator:
                 for key in list(module_config.keys()):
                     del module_config[key]
                 
-                # Add selected fields
+                # Add selected fields as strings
                 for field in fields:
-                    module_config[field] = True
+                    module_config[field] = 'true'
     
     def _setup_unit_system(self):
         """Setup unit system extensions for OpenWeather data."""
@@ -847,18 +847,18 @@ class OpenWeatherInstaller(ExtensionInstaller):
             ],
             config={
                 'OpenWeatherService': {
-                    'enable': True,
+                    'enable': 'true',
                     'api_key': 'REPLACE_WITH_YOUR_API_KEY',
-                    'timeout': 30,
-                    'log_success': False,
-                    'log_errors': True,
+                    'timeout': '30',
+                    'log_success': 'false',
+                    'log_errors': 'true',
                     'modules': {
-                        'current_weather': True,
-                        'air_quality': True
+                        'current_weather': 'true',
+                        'air_quality': 'true'
                     },
                     'intervals': {
-                        'current_weather': 3600,
-                        'air_quality': 7200
+                        'current_weather': '3600',
+                        'air_quality': '7200'
                     },
                     'field_selection': {
                         'complexity_level': 'standard'
