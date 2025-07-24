@@ -131,7 +131,7 @@ class TerminalUI:
                             'name': field_name,
                             'display': field_info['display_name'],
                             'module': module_name,
-                            'selected': False
+                            'selected': 'false'  # String instead of boolean
                         }
                         all_fields.append(field_item)
                         field_to_module[len(all_fields) - 1] = module_name
@@ -186,7 +186,7 @@ class TerminalUI:
                     elif item['type'] == 'field':
                         # Field item
                         cursor = "→ " if i == current_item else "  "
-                        checkbox = "[✓] " if item['selected'] else "[ ] "
+                        checkbox = "[✓] " if item['selected'] == 'true' else "[ ] "  # Check string value
                         text = f"{cursor}{checkbox}{item['display']}"
                         
                         # Truncate if too long
@@ -197,7 +197,7 @@ class TerminalUI:
                         attr = 0
                         if i == current_item:
                             attr |= curses.color_pair(1) | curses.A_REVERSE
-                        if item['selected']:
+                        if item['selected'] == 'true':  # Check string value
                             attr |= curses.color_pair(2)
                         
                         stdscr.addstr(y_pos, 4, text, attr)
@@ -218,7 +218,7 @@ class TerminalUI:
                             module = item['module']
                             if module not in selected_counts:
                                 selected_counts[module] = 0
-                            if item['selected']:
+                            if item['selected'] == 'true':  # Check string value
                                 selected_counts[module] += 1
                                 total_selected += 1
                     
@@ -264,7 +264,9 @@ class TerminalUI:
                     elif key == 32:  # SPACE
                         if (current_item < len(all_fields) and 
                             all_fields[current_item]['type'] == 'field'):
-                            all_fields[current_item]['selected'] = not all_fields[current_item]['selected']
+                            # Toggle between 'true' and 'false' strings
+                            current_selection = all_fields[current_item]['selected']
+                            all_fields[current_item]['selected'] = 'false' if current_selection == 'true' else 'true'
                         
                 except KeyboardInterrupt:
                     return None
@@ -272,7 +274,7 @@ class TerminalUI:
             # Convert to expected format
             selected_fields = {'current_weather': [], 'air_quality': []}
             for item in all_fields:
-                if item['type'] == 'field' and item['selected']:
+                if item['type'] == 'field' and item['selected'] == 'true':  # Check string value
                     selected_fields[item['module']].append(item['name'])
             
             return selected_fields
@@ -833,7 +835,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
     def __init__(self):
         super(OpenWeatherInstaller, self).__init__(
             version="1.0.0",
-            name="OpenWeather",
+            name="OpenWeather", 
             description="OpenWeatherMap API integration with modular field selection",
             author="WeeWX OpenWeather Extension",
             author_email="",
