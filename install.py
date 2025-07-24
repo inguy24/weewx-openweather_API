@@ -479,7 +479,7 @@ class DatabaseManager:
     def _check_existing_fields(self):
         """Check which OpenWeather fields already exist in database."""
         try:
-            db_binding = self.config_dict.get('DataBindings', {}).get('wx_binding', 'wx_binding')
+            db_binding = 'wx_binding'
             
             with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
                 existing_fields = []
