@@ -783,10 +783,10 @@ class OpenWeatherInstaller(ExtensionInstaller):
         
         service_config = config_dict['OpenWeatherService']
         
-        # Basic configuration (convert booleans to strings for ConfigObj)
+        # Basic configuration (convert all values to strings for ConfigObj)
         service_config['enable'] = 'True'
-        service_config['api_key'] = api_key
-        service_config['timeout'] = 30
+        service_config['api_key'] = str(api_key)
+        service_config['timeout'] = '30'
         service_config['log_success'] = 'False'
         service_config['log_errors'] = 'True'
         
@@ -797,12 +797,12 @@ class OpenWeatherInstaller(ExtensionInstaller):
         service_config['modules']['current_weather'] = 'True' if modules.get('current_weather', True) else 'False'
         service_config['modules']['air_quality'] = 'True' if modules.get('air_quality', True) else 'False'
         
-        # Interval configuration
+        # Interval configuration (convert to strings)
         if 'intervals' not in service_config:
             service_config['intervals'] = {}
         
-        service_config['intervals']['current_weather'] = 3600
-        service_config['intervals']['air_quality'] = 7200
+        service_config['intervals']['current_weather'] = '3600'
+        service_config['intervals']['air_quality'] = '7200'
         
         # Field selection configuration
         if 'field_selection' not in service_config:
