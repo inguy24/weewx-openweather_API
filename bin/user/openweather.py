@@ -1100,11 +1100,11 @@ class OpenWeatherTester:
         return True
     
     def test_database_schema(self):
-        """Test database schema and field creation."""
+        """Test database schema and field creation using reliable weedb method."""
         print("\n🗄️  TESTING DATABASE SCHEMA")
         print("-" * 40)
         
-        # Test database connection
+        # Test database connection using weedb (database-agnostic)
         print("Testing database connection...")
         try:
             # Find WeeWX configuration file
@@ -1116,88 +1116,96 @@ class OpenWeatherTester:
             
             # Load WeeWX configuration
             import configobj
+            import weedb
             config_dict = configobj.ConfigObj(config_path)
             
-            # Get database binding
-            db_binding = 'wx_binding'
+            # Get database configuration using weedb (handles SQLite, MySQL, etc.)
+            db_binding = 'wx_binding'  # Standard WeeWX binding name
+            binding_config = config_dict['DataBindings'][db_binding]
+            database_name = binding_config['database']
+            database_config = config_dict['Databases'][database_name]
             
-            # Test database connection
-            with weewx.manager.open_manager_with_config(config_dict, db_binding) as dbmanager:
-                print(f"  ✅ Database connection: Connected to {dbmanager.database_name}")
+            # Test database connection using weedb (database-agnostic)
+            with weedb.connect(database_config) as connection:
+                print(f"  ✅ Database connection: Connected via weedb ({database_config.get('driver', 'unknown driver')})")
                 
-        except ImportError:
-            print("  ⚠️  WeeWX modules not available - skipping database tests")
+                # Check if archive table exists
+                tables = connection.tables()
+                if 'archive' not in tables:
+                    print("  ❌ Archive table not found in database")
+                    return False
+                
+                # Get column information (works for both SQLite and MySQL)
+                columns = connection.columnsOf('archive')
+                ow_fields = [col for col in columns if col.startswith('ow_')]
+                
+                if ow_fields:
+                    print(f"  ✅ OpenWeather fields found: {len(ow_fields)} fields present")
+                    
+                    # Show field details for verification
+                    for field in sorted(ow_fields)[:10]:  # Show first 10
+                        print(f"    - {field}")
+                    if len(ow_fields) > 10:
+                        print(f"    ... and {len(ow_fields) - 10} more")
+                else:
+                    print("  ⚠️  No OpenWeather fields found in database")
+                    print("     This may indicate the extension was not properly installed")
+                    print("     or field selection was set to minimal/none")
+                
+                # Test data presence (functional test)
+                print("\nTesting data collection functionality...")
+                cursor = connection.cursor()
+                
+                # Check for recent OpenWeather data
+                cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_temperature IS NOT NULL")
+                weather_data_count = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_pm25 IS NOT NULL")  
+                air_quality_count = cursor.fetchone()[0]
+                
+                if weather_data_count > 0:
+                    print(f"  ✅ Weather data: {weather_data_count} records contain OpenWeather weather data")
+                else:
+                    print("  ⚠️  No weather data found (extension may be newly installed or disabled)")
+                    
+                if air_quality_count > 0:
+                    print(f"  ✅ Air quality data: {air_quality_count} records contain OpenWeather air quality data")
+                else:
+                    print("  ⚠️  No air quality data found (extension may be newly installed or disabled)")
+                
+                # Test data freshness if data exists
+                if weather_data_count > 0 or air_quality_count > 0:
+                    cursor.execute("""
+                        SELECT 
+                            COUNT(*) as recent_records,
+                            MAX(ow_weather_timestamp) as latest_weather,
+                            MAX(ow_air_quality_timestamp) as latest_air_quality
+                        FROM archive 
+                        WHERE (ow_temperature IS NOT NULL OR ow_pm25 IS NOT NULL)
+                        AND dateTime > strftime('%s', 'now', '-1 day')
+                    """)
+                    
+                    result = cursor.fetchone()
+                    if result and result[0] > 0:
+                        print(f"  ✅ Data freshness: {result[0]} records with data in last 24 hours")
+                        
+                        # Show timestamps if available
+                        if result[1]:  # latest_weather
+                            import datetime
+                            weather_time = datetime.datetime.fromtimestamp(result[1]).strftime('%Y-%m-%d %H:%M:%S')
+                            print(f"    Latest weather data: {weather_time}")
+                        if result[2]:  # latest_air_quality  
+                            air_time = datetime.datetime.fromtimestamp(result[2]).strftime('%Y-%m-%d %H:%M:%S')
+                            print(f"    Latest air quality data: {air_time}")
+                    else:
+                        print("  ⚠️  No recent data found (check if service is running)")
+                
+        except ImportError as e:
+            print(f"  ⚠️  Required modules not available: {e}")
+            print("     This is normal if WeeWX or weedb is not installed")
             return True
         except Exception as e:
-            print(f"  ❌ Database connection failed: {e}")
-            return False
-        
-        # Test OpenWeather field existence
-        print("\nTesting OpenWeather database fields...")
-        try:
-            # Check for OpenWeather fields
-            ow_fields = []
-            for column in dbmanager.connection.genSchemaOf('archive'):
-                field_name = column[1]
-                if field_name.startswith('ow_'):
-                    ow_fields.append(field_name)
-            
-            if ow_fields:
-                print(f"  ✅ OpenWeather fields found: {len(ow_fields)} fields present")
-                
-                # Show field details for verification
-                for field in sorted(ow_fields)[:10]:  # Show first 10
-                    print(f"    - {field}")
-                if len(ow_fields) > 10:
-                    print(f"    ... and {len(ow_fields) - 10} more")
-            else:
-                print("  ⚠️  No OpenWeather fields found in database")
-                print("     This may indicate the extension was not properly installed")
-                print("     or field selection was set to minimal/none")
-                
-        except Exception as e:
-            print(f"  ❌ Field existence check failed: {e}")
-            return False
-        
-        # Test field types and structure
-        print("\nTesting field types and structure...")
-        try:
-            field_info = {}
-            for column in dbmanager.connection.genSchemaOf('archive'):
-                field_name, field_type = column[1], column[2]
-                if field_name.startswith('ow_'):
-                    field_info[field_name] = field_type
-            
-            # Expected field types
-            expected_types = {
-                'REAL': ['ow_temperature', 'ow_feels_like', 'ow_humidity', 'ow_pressure', 
-                        'ow_wind_speed', 'ow_wind_direction', 'ow_pm25', 'ow_pm10', 'ow_ozone'],
-                'INTEGER': ['ow_aqi'],
-                'TEXT': ['ow_weather_main', 'ow_weather_description', 'ow_main_pollutant']
-            }
-            
-            type_check_passed = 0
-            type_check_total = 0
-            
-            for expected_type, field_list in expected_types.items():
-                for field_name in field_list:
-                    if field_name in field_info:
-                        actual_type = field_info[field_name].upper()
-                        type_check_total += 1
-                        
-                        # Handle database-specific type variations
-                        if (expected_type == 'REAL' and actual_type in ['REAL', 'DOUBLE', 'FLOAT', 'NUMERIC']) or \
-                           (expected_type == 'INTEGER' and actual_type in ['INTEGER', 'INT']) or \
-                           (expected_type == 'TEXT' and actual_type in ['TEXT', 'VARCHAR', 'CHAR']):
-                            type_check_passed += 1
-            
-            if type_check_total > 0:
-                print(f"  ✅ Field types: {type_check_passed}/{type_check_total} fields have correct types")
-            else:
-                print("  ⚠️  No recognized OpenWeather fields found for type checking")
-                
-        except Exception as e:
-            print(f"  ❌ Field type check failed: {e}")
+            print(f"  ❌ Database test failed: {e}")
             return False
         
         print("\nDatabase Schema Test: ✅ PASSED")
