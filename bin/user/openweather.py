@@ -589,15 +589,42 @@ class OpenWeatherService(StdService):
         if complexity and complexity != 'custom':
             return self.field_manager.get_smart_default_fields(complexity)
         
-        # Otherwise use custom field selection
-        custom_selection = {
-            'current_weather': field_config.get('current_weather', []),
-            'air_quality': field_config.get('air_quality', [])
-        }
+        # Handle custom field selection - convert ConfigObj boolean format to lists
+        custom_selection = {}
+        
+        # Process current_weather module
+        current_weather_config = field_config.get('current_weather', {})
+        if isinstance(current_weather_config, dict):
+            # Convert {field_name: True/False} to [field_name, ...]
+            selected_fields = []
+            for field_name, enabled in current_weather_config.items():
+                # Handle both string and boolean values from ConfigObj
+                if isinstance(enabled, str):
+                    enabled = enabled.lower() in ('true', 'yes', '1')
+                if enabled:
+                    selected_fields.append(field_name)
+            custom_selection['current_weather'] = selected_fields
+        else:
+            custom_selection['current_weather'] = current_weather_config or []
+        
+        # Process air_quality module
+        air_quality_config = field_config.get('air_quality', {})
+        if isinstance(air_quality_config, dict):
+            # Convert {field_name: True/False} to [field_name, ...]
+            selected_fields = []
+            for field_name, enabled in air_quality_config.items():
+                # Handle both string and boolean values from ConfigObj
+                if isinstance(enabled, str):
+                    enabled = enabled.lower() in ('true', 'yes', '1')
+                if enabled:
+                    selected_fields.append(field_name)
+            custom_selection['air_quality'] = selected_fields
+        else:
+            custom_selection['air_quality'] = air_quality_config or []
         
         # Validate custom selection
         return self.field_manager.validate_field_selection(custom_selection)
-    
+        
     def _setup_unit_system(self):
         """Setup WeeWX unit system for selected fields."""
         
