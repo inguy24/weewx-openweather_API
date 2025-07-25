@@ -142,8 +142,14 @@ class FieldSelectionManager:
             if module in all_fields:
                 for category_data in all_fields[module]['categories'].values():
                     for field_name, field_info in category_data['fields'].items():
-                        if field_name in fields:
+                        # FIX: Handle 'all' case properly - same logic as database mappings
+                        if fields == 'all':
+                            # Include all fields for this module
                             mappings[field_info['database_field']] = field_info['api_path']
+                        elif isinstance(fields, list) and field_name in fields:
+                            # Include only selected fields
+                            mappings[field_info['database_field']] = field_info['api_path']
+                        # Skip other field types to prevent errors
         
         return mappings
 
