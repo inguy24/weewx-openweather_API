@@ -500,8 +500,6 @@ class DatabaseManager:
     def _add_missing_fields(self, missing_fields, field_mappings):
         """Add missing fields using weectl commands."""
         created_count = 0
-        
-        # Get config file path - FIXED to use correct attribute access
         config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
         
         # Find weectl executable
@@ -517,13 +515,12 @@ class DatabaseManager:
             try:
                 print(f"  Adding field '{field_name}' ({field_type})...")
                 
-                # FIXED: Build command in correct order - config first, then add type if needed
-                cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
+                # CORRECT: Use WeeWX documented format with equals signs
+                cmd = [weectl_path, 'database', 'add-column', field_name, f'--config={config_path}', '-y']
                 
-                # CRITICAL: Only add --type for REAL/INTEGER and insert at correct position
+                # Only add --type for REAL/INTEGER (weectl limitation)
                 if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, '--type')      # Insert before '-y'
-                    cmd.insert(-2, field_type)    # Insert before '--type'
+                    cmd.insert(-2, f'--type={field_type}')
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
