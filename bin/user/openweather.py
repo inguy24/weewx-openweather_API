@@ -1128,6 +1128,11 @@ class OpenWeatherTester:
                 database_name = binding_config['database']
                 database_config = dict(config_dict['Databases'][database_name])
                 
+                # DEBUG: Show what we found in the configuration
+                print(f"  Debug: binding_config = {dict(binding_config)}")
+                print(f"  Debug: database_name = {database_name}")
+                print(f"  Debug: database_config = {database_config}")
+                
                 # Convert ConfigObj to regular dict to avoid issues
                 for key, value in database_config.items():
                     if hasattr(value, 'dict'):  # ConfigObj Section
