@@ -498,64 +498,155 @@ class DatabaseManager:
             return []
     
     def _add_missing_fields(self, missing_fields, field_mappings):
-        """Add missing fields using weectl commands."""
-        created_count = 0
-        config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
+        """Add missing database fields using hybrid approach.
         
+        Uses weectl for REAL/INTEGER types (confirmed supported)
+        Uses direct SQL for VARCHAR/TEXT types (weectl limitation workaround)
+        
+        Fails fast on any real errors to prevent corrupted installations.
+        """
         # Find weectl executable
         weectl_path = self._find_weectl()
-        if not weectl_path:
-            print("  Error: weectl executable not found")
-            self._print_manual_commands(missing_fields, field_mappings)
-            return 0
+        config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
+        created_count = 0
         
         for field_name in sorted(missing_fields):
             field_type = field_mappings[field_name]
             
-            try:
-                print(f"  Adding field '{field_name}' ({field_type})...")
+            print(f"  Adding field '{field_name}' ({field_type})...")
+            
+            # Use weectl for numeric types (confirmed supported)
+            if field_type in ['REAL', 'INTEGER', 'real', 'integer', 'int']:
+                if not weectl_path:
+                    raise Exception("weectl executable not found - required for numeric field types")
                 
-                # CORRECT: Use WeeWX documented format with equals signs
-                cmd = [weectl_path, 'database', 'add-column', field_name, f'--config={config_path}', '-y']
-                
-                # Always add --type (weectl supports VARCHAR/TEXT)
+                cmd = [weectl_path, 'database', 'add-column', field_name, 
+                    f'--config={config_path}', '-y']
                 cmd.insert(-2, f'--type={field_type}')
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
                 if result.returncode == 0:
-                    print(f"    ✓ Successfully added '{field_name}'")
+                    print(f"    ✓ Successfully added '{field_name}' using weectl")
                     created_count += 1
-                elif 'duplicate column' in result.stderr.lower() or 'already exists' in result.stderr.lower():
+                elif 'duplicate column' in result.stderr.lower():
                     print(f"    ✓ Field '{field_name}' already exists")
                     created_count += 1
                 else:
-                    print(f"    ✗ Failed to add '{field_name}': {result.stderr.strip()}")
-                    
-            except subprocess.TimeoutExpired:
-                print(f"    ✗ Timeout adding '{field_name}'")
-            except Exception as e:
-                print(f"    ✗ Error adding '{field_name}': {e}")
+                    raise Exception(f"weectl failed to add '{field_name}': {result.stderr.strip()}")
+            
+            else:
+                # Use direct SQL for VARCHAR/TEXT types (AirVisual method)
+                print(f"    Using direct SQL (weectl doesn't support {field_type})")
+                self._add_field_direct_sql(field_name, field_type)
+                created_count += 1
         
         return created_count
+
+    def _add_field_direct_sql(self, field_name, field_type):
+        """Add field using direct SQL through WeeWX database manager (AirVisual method).
+        
+        Handles both MySQL/MariaDB and SQLite databases properly.
+        """
+        try:
+            db_binding = 'wx_binding'
+            
+            with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
+                # Convert MySQL-specific types for SQLite compatibility
+                if field_type.startswith('VARCHAR'):
+                    sql_type = 'TEXT' if 'sqlite' in str(dbmanager.connection).lower() else field_type
+                else:
+                    sql_type = field_type
+                
+                sql = f"ALTER TABLE archive ADD COLUMN {field_name} {sql_type}"
+                dbmanager.connection.execute(sql)
+                print(f"    ✓ Successfully added '{field_name}' using direct SQL")
+                
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'duplicate column' in error_msg or 'already exists' in error_msg:
+                print(f"    ✓ Field '{field_name}' already exists")
+            else:
+                print(f"    ❌ Failed to add '{field_name}': {e}")
+                raise Exception(f"Direct SQL field creation failed: {e}")
+
+    def _create_forecast_table_if_needed(self, selected_fields):
+        """Create openweather_forecast table if forecast modules are selected."""
+        forecast_modules = ['forecast_daily', 'forecast_hourly', 'forecast_air_quality']
+        
+        # Check if any forecast modules are selected
+        needs_forecast_table = any(module in selected_fields for module in forecast_modules)
+        
+        if not needs_forecast_table:
+            return
+        
+        print("  Creating forecast table for forecast modules...")
+        
+        try:
+            db_binding = 'wx_binding'
+            
+            with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
+                # Check if table already exists
+                table_exists = False
+                try:
+                    dbmanager.connection.execute("SELECT 1 FROM openweather_forecast LIMIT 1")
+                    table_exists = True
+                    print("    ✓ Forecast table already exists")
+                except:
+                    table_exists = False
+                
+                if not table_exists:
+                    # Convert MySQL-specific types for SQLite compatibility
+                    if 'sqlite' in str(dbmanager.connection).lower():
+                        # SQLite version
+                        create_sql = """
+                        CREATE TABLE openweather_forecast (
+                            dateTime INTEGER NOT NULL,
+                            forecast_type TEXT NOT NULL,
+                            forecast_time INTEGER NOT NULL,
+                            forecast_data TEXT,
+                            PRIMARY KEY (dateTime, forecast_type, forecast_time)
+                        )"""
+                    else:
+                        # MySQL/MariaDB version
+                        create_sql = """
+                        CREATE TABLE openweather_forecast (
+                            dateTime INTEGER NOT NULL,
+                            forecast_type VARCHAR(20) NOT NULL,
+                            forecast_time INTEGER NOT NULL,
+                            forecast_data TEXT,
+                            PRIMARY KEY (dateTime, forecast_type, forecast_time)
+                        )"""
+                    
+                    dbmanager.connection.execute(create_sql)
+                    print("    ✓ Successfully created openweather_forecast table")
+                    
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'already exists' in error_msg or 'table exists' in error_msg:
+                print("    ✓ Forecast table already exists")
+            else:
+                raise Exception(f"Failed to create forecast table: {e}")
     
     def _find_weectl(self):
-        """Find the weectl executable."""
-        possible_paths = [
+        """Find the weectl executable in standard locations."""
+        weectl_candidates = [
             '/usr/bin/weectl',
-            '/usr/local/bin/weectl',
-            os.path.expanduser('~/weewx-data/bin/weectl'),
-            'weectl'  # In PATH
+            '/usr/local/bin/weectl', 
+            'weectl'  # Try PATH
         ]
         
-        for path in possible_paths:
+        for candidate in weectl_candidates:
             try:
-                result = subprocess.run([path, '--version'], capture_output=True, text=True, timeout=5)
+                result = subprocess.run([candidate, '--version'], 
+                                    capture_output=True, text=True, timeout=10)
                 if result.returncode == 0:
-                    return path
-            except:
+                    print(f"  Found weectl: {candidate}")
+                    return candidate
+            except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue
         
+        print("  Warning: weectl not found - will use direct SQL for all fields")
         return None
     
     def _print_manual_commands(self, missing_fields, field_mappings):
