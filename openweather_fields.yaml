@@ -113,17 +113,17 @@ field_definitions:
           weather_main:
             display_name: "Weather category"
             database_field: "ow_weather_main"
-            database_type: "TEXT"
+            database_type: "VARCHAR(20)"
             api_path: "weather[0].main"
           weather_description:
             display_name: "Weather description"
             database_field: "ow_weather_description"
-            database_type: "TEXT"
+            database_type: "VARCHAR(50)"
             api_path: "weather[0].description"
           weather_icon:
             display_name: "Weather icon code"
             database_field: "ow_weather_icon"
-            database_type: "TEXT"
+            database_type: "VARCHAR(10)"
             api_path: "weather[0].icon"
             
   air_quality:
