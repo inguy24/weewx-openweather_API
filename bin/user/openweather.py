@@ -239,7 +239,8 @@ class OpenWeatherDataCollector:
     
     def __init__(self, api_key, timeout=30, selected_fields=None):
         self.api_key = api_key
-        self.timeout = timeout
+        # FIX: Ensure timeout is always an integer
+        self.timeout = int(timeout) if timeout else 30
         self.selected_fields = selected_fields or {}
         self.field_manager = FieldSelectionManager()
         
@@ -441,7 +442,7 @@ class OpenWeatherBackgroundThread(threading.Thread):
         # Initialize data collector
         self.collector = OpenWeatherDataCollector(
             api_key=config['api_key'],
-            timeout=config.get('timeout', 30),
+            timeout=int(config.get('timeout', 30)),  # FIX: Convert string to int
             selected_fields=selected_fields
         )
         
@@ -454,10 +455,10 @@ class OpenWeatherBackgroundThread(threading.Thread):
         self.latitude = float(station_config.get('latitude', 0.0))
         self.longitude = float(station_config.get('longitude', 0.0))
         
-        # Module intervals
+        # Module intervals - FIX: Convert strings to integers
         self.intervals = {
-            'current_weather': config.get('intervals', {}).get('current_weather', 3600),
-            'air_quality': config.get('intervals', {}).get('air_quality', 7200)
+            'current_weather': int(config.get('intervals', {}).get('current_weather', 3600)),
+            'air_quality': int(config.get('intervals', {}).get('air_quality', 7200))
         }
         
         # Last collection times
@@ -467,6 +468,7 @@ class OpenWeatherBackgroundThread(threading.Thread):
         }
         
         log.info(f"OpenWeather background thread initialized for location: {self.latitude}, {self.longitude}")
+
     
     def run(self):
         """Main background thread loop."""
@@ -504,14 +506,20 @@ class OpenWeatherBackgroundThread(threading.Thread):
                 with self.data_lock:
                     self.latest_data.update(weather_data)
                 
-                if self.config.get('log_success', False):
+                # FIX: Convert string boolean to actual boolean
+                log_success = str(self.config.get('log_success', 'false')).lower() in ('true', 'yes', '1')
+                if log_success:
                     log.info(f"Collected current weather data: {len(weather_data)} fields")
             
         except OpenWeatherAPIError as e:
-            if self.config.get('log_errors', True):
+            # FIX: Convert string boolean to actual boolean
+            log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
+            if log_errors:
                 log.error(f"OpenWeather API error collecting weather data: {e}")
         except Exception as e:
-            if self.config.get('log_errors', True):
+            # FIX: Convert string boolean to actual boolean
+            log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
+            if log_errors:
                 log.error(f"Unexpected error collecting weather data: {e}")
     
     def _collect_air_quality(self):
@@ -523,14 +531,20 @@ class OpenWeatherBackgroundThread(threading.Thread):
                 with self.data_lock:
                     self.latest_data.update(air_quality_data)
                 
-                if self.config.get('log_success', False):
+                # FIX: Convert string boolean to actual boolean
+                log_success = str(self.config.get('log_success', 'false')).lower() in ('true', 'yes', '1')
+                if log_success:
                     log.info(f"Collected air quality data: {len(air_quality_data)} fields")
             
         except OpenWeatherAPIError as e:
-            if self.config.get('log_errors', True):
+            # FIX: Convert string boolean to actual boolean
+            log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
+            if log_errors:
                 log.error(f"OpenWeather API error collecting air quality data: {e}")
         except Exception as e:
-            if self.config.get('log_errors', True):
+            # FIX: Convert string boolean to actual boolean
+            log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
+            if log_errors:
                 log.error(f"Unexpected error collecting air quality data: {e}")
     
     def get_latest_data(self):
@@ -553,7 +567,9 @@ class OpenWeatherService(StdService):
         # Parse configuration
         self.config = self._parse_config(config_dict)
         
-        if not self.config.get('enable', True):
+        # FIX: Convert string boolean to actual boolean
+        enable = str(self.config.get('enable', 'true')).lower() in ('true', 'yes', '1')
+        if not enable:
             log.info("OpenWeather service disabled")
             return
         
@@ -696,7 +712,9 @@ class OpenWeatherService(StdService):
     
     def new_archive_record(self, event):
         """Inject OpenWeather data into archive records."""
-        if not self.config.get('enable', True):
+        # FIX: Convert string boolean to actual boolean
+        enable = str(self.config.get('enable', 'true')).lower() in ('true', 'yes', '1')
+        if not enable:
             return
         
         try:
@@ -709,7 +727,8 @@ class OpenWeatherService(StdService):
                 weather_age = current_time - latest_data.get('ow_weather_timestamp', 0)
                 air_quality_age = current_time - latest_data.get('ow_air_quality_timestamp', 0)
                 
-                max_age = self.config.get('max_data_age', 7200)  # 2 hours default
+                # FIX: Convert string to integer
+                max_age = int(self.config.get('max_data_age', 7200))  # 2 hours default
                 
                 # Inject data that isn't too old
                 injected_fields = []
@@ -730,14 +749,18 @@ class OpenWeatherService(StdService):
                                 event.record[field_name] = value
                                 injected_fields.append(field_name)
                 
-                if injected_fields and self.config.get('log_success', False):
+                # FIX: Convert string boolean to actual boolean
+                log_success = str(self.config.get('log_success', 'false')).lower() in ('true', 'yes', '1')
+                if injected_fields and log_success:
                     log.info(f"Injected OpenWeather data: {len(injected_fields)} fields")
-                
+            
             else:
                 log.debug("No OpenWeather data available for archive record")
                 
         except Exception as e:
-            if self.config.get('log_errors', True):
+            # FIX: Convert string boolean to actual boolean
+            log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
+            if log_errors:
                 log.error(f"Error injecting OpenWeather data: {e}")
     
     def shutDown(self):
