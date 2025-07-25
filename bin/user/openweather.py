@@ -1100,11 +1100,11 @@ class OpenWeatherTester:
         return True
     
     def test_database_schema(self):
-        """Test database schema and field creation using reliable weedb method."""
+        """Test database schema using WeeWX's standard manager (database-agnostic)."""
         print("\n🗄️  TESTING DATABASE SCHEMA")
         print("-" * 40)
         
-        # Test database connection using weedb (database-agnostic)
+        # Test database connection using WeeWX's standard approach
         print("Testing database connection...")
         try:
             # Find WeeWX configuration file
@@ -1116,45 +1116,20 @@ class OpenWeatherTester:
             
             # Load WeeWX configuration
             import configobj
-            import weedb
             config_dict = configobj.ConfigObj(config_path)
             
-            # Get database configuration using weedb (handles SQLite, MySQL, etc.)
+            # Use WeeWX's standard database manager (database-agnostic)
             db_binding = 'wx_binding'  # Standard WeeWX binding name
             
-            # Handle different configuration structures safely
-            try:
-                binding_config = config_dict['DataBindings'][db_binding]
-                database_name = binding_config['database']
-                database_config = dict(config_dict['Databases'][database_name])
-                
-                # DEBUG: Show what we found in the configuration
-                print(f"  Debug: binding_config = {dict(binding_config)}")
-                print(f"  Debug: database_name = {database_name}")
-                print(f"  Debug: database_config = {database_config}")
-                
-                # Convert ConfigObj to regular dict to avoid issues
-                for key, value in database_config.items():
-                    if hasattr(value, 'dict'):  # ConfigObj Section
-                        database_config[key] = dict(value)
-                        
-            except KeyError as e:
-                print(f"  ❌ Database configuration not found: missing {e}")
-                return False
-            
-            # Test database connection using weedb (database-agnostic)
-            with weedb.connect(database_config) as connection:
-                driver_info = database_config.get('driver', 'unknown driver')
-                print(f"  ✅ Database connection: Connected via weedb ({driver_info})")
-                
-                # Check if archive table exists
-                tables = connection.tables()
-                if 'archive' not in tables:
-                    print("  ❌ Archive table not found in database")
-                    return False
+            # Test database connection using WeeWX's standard method
+            with weewx.manager.open_manager_with_config(config_dict, db_binding) as dbmanager:
+                print(f"  ✅ Database connection: Connected to {dbmanager.database_name}")
                 
                 # Get column information (works for both SQLite and MySQL)
-                columns = connection.columnsOf('archive')
+                columns = []
+                for column in dbmanager.connection.genSchemaOf('archive'):
+                    columns.append(column[1])  # column[1] is the column name
+                
                 ow_fields = [col for col in columns if col.startswith('ow_')]
                 
                 if ow_fields:
@@ -1172,9 +1147,9 @@ class OpenWeatherTester:
                 
                 # Test data presence (functional test)
                 print("\nTesting data collection functionality...")
-                cursor = connection.cursor()
                 
                 # Check for recent OpenWeather data
+                cursor = dbmanager.connection.cursor()
                 cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_temperature IS NOT NULL")
                 weather_data_count = cursor.fetchone()[0]
                 
@@ -1193,15 +1168,29 @@ class OpenWeatherTester:
                 
                 # Test data freshness if data exists
                 if weather_data_count > 0 or air_quality_count > 0:
-                    cursor.execute("""
-                        SELECT 
-                            COUNT(*) as recent_records,
-                            MAX(ow_weather_timestamp) as latest_weather,
-                            MAX(ow_air_quality_timestamp) as latest_air_quality
-                        FROM archive 
-                        WHERE (ow_temperature IS NOT NULL OR ow_pm25 IS NOT NULL)
-                        AND dateTime > strftime('%s', 'now', '-1 day')
-                    """)
+                    # Use database-agnostic SQL for timestamp comparison
+                    if 'sqlite' in str(type(dbmanager.connection)).lower():
+                        # SQLite syntax
+                        cursor.execute("""
+                            SELECT 
+                                COUNT(*) as recent_records,
+                                MAX(ow_weather_timestamp) as latest_weather,
+                                MAX(ow_air_quality_timestamp) as latest_air_quality
+                            FROM archive 
+                            WHERE (ow_temperature IS NOT NULL OR ow_pm25 IS NOT NULL)
+                            AND dateTime > strftime('%s', 'now', '-1 day')
+                        """)
+                    else:
+                        # MySQL syntax
+                        cursor.execute("""
+                            SELECT 
+                                COUNT(*) as recent_records,
+                                MAX(ow_weather_timestamp) as latest_weather,
+                                MAX(ow_air_quality_timestamp) as latest_air_quality
+                            FROM archive 
+                            WHERE (ow_temperature IS NOT NULL OR ow_pm25 IS NOT NULL)
+                            AND dateTime > UNIX_TIMESTAMP(DATE_SUB(NOW(), INTERVAL 1 DAY))
+                        """)
                     
                     result = cursor.fetchone()
                     if result and result[0] > 0:
@@ -1220,7 +1209,7 @@ class OpenWeatherTester:
                 
         except ImportError as e:
             print(f"  ⚠️  Required modules not available: {e}")
-            print("     This is normal if WeeWX or weedb is not installed")
+            print("     This is normal if WeeWX is not installed")
             return True
         except Exception as e:
             print(f"  ❌ Database test failed: {e}")
