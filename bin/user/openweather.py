@@ -1119,7 +1119,7 @@ class OpenWeatherTester:
             config_dict = configobj.ConfigObj(config_path)
             
             # Get database binding
-            db_binding = config_dict.get('DataBindings', {}).get('wx_binding', 'wx_binding')
+            db_binding = 'wx_binding'
             
             # Test database connection
             with weewx.manager.open_manager_with_config(config_dict, db_binding) as dbmanager:
