@@ -502,25 +502,7 @@ class DatabaseManager:
         created_count = 0
         
         # Get config file path - FIXED to use correct attribute access
-        config_path = getattr(self.config_dict, 'filename', None)
-        if not config_path:
-            # Fallback to common locations
-            possible_configs = [
-                '/etc/weewx/weewx.conf',
-                '/usr/share/weewx/weewx.conf', 
-                os.path.expanduser('~/weewx-data/weewx.conf')
-            ]
-            for path in possible_configs:
-                if os.path.exists(path):
-                    config_path = path
-                    break
-            
-            if not config_path:
-                print("  Error: Cannot find WeeWX configuration file")
-                self._print_manual_commands(missing_fields, field_mappings)
-                return 0
-        
-        print(f"  Using config file: {config_path}")  # DEBUG: Show which config file
+        config_path = getattr(self.config_dict, 'filename', '/etc/weewx/weewx.conf')
         
         # Find weectl executable
         weectl_path = self._find_weectl()
@@ -529,22 +511,19 @@ class DatabaseManager:
             self._print_manual_commands(missing_fields, field_mappings)
             return 0
         
-        print(f"  Using weectl: {weectl_path}")  # DEBUG: Show which weectl
-        
         for field_name in sorted(missing_fields):
             field_type = field_mappings[field_name]
             
             try:
                 print(f"  Adding field '{field_name}' ({field_type})...")
                 
+                # FIXED: Build command in correct order - config first, then add type if needed
                 cmd = [weectl_path, 'database', 'add-column', field_name, '--config', config_path, '-y']
                 
-                # Only add --type for REAL/INTEGER (weectl limitation)
+                # CRITICAL: Only add --type for REAL/INTEGER and insert at correct position
                 if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, '--type')
-                    cmd.insert(-2, field_type)
-                
-                print(f"    Command: {' '.join(cmd)}")  # DEBUG: Show exact command
+                    cmd.insert(-2, '--type')      # Insert before '-y'
+                    cmd.insert(-2, field_type)    # Insert before '--type'
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
