@@ -518,9 +518,8 @@ class DatabaseManager:
                 # CORRECT: Use WeeWX documented format with equals signs
                 cmd = [weectl_path, 'database', 'add-column', field_name, f'--config={config_path}', '-y']
                 
-                # Only add --type for REAL/INTEGER (weectl limitation)
-                if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, f'--type={field_type}')
+                # Always add --type (weectl supports VARCHAR/TEXT)
+                cmd.insert(-2, f'--type={field_type}')
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
