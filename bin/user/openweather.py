@@ -1121,13 +1121,26 @@ class OpenWeatherTester:
             
             # Get database configuration using weedb (handles SQLite, MySQL, etc.)
             db_binding = 'wx_binding'  # Standard WeeWX binding name
-            binding_config = config_dict['DataBindings'][db_binding]
-            database_name = binding_config['database']
-            database_config = config_dict['Databases'][database_name]
+            
+            # Handle different configuration structures safely
+            try:
+                binding_config = config_dict['DataBindings'][db_binding]
+                database_name = binding_config['database']
+                database_config = dict(config_dict['Databases'][database_name])
+                
+                # Convert ConfigObj to regular dict to avoid issues
+                for key, value in database_config.items():
+                    if hasattr(value, 'dict'):  # ConfigObj Section
+                        database_config[key] = dict(value)
+                        
+            except KeyError as e:
+                print(f"  ❌ Database configuration not found: missing {e}")
+                return False
             
             # Test database connection using weedb (database-agnostic)
             with weedb.connect(database_config) as connection:
-                print(f"  ✅ Database connection: Connected via weedb ({database_config.get('driver', 'unknown driver')})")
+                driver_info = database_config.get('driver', 'unknown driver')
+                print(f"  ✅ Database connection: Connected via weedb ({driver_info})")
                 
                 # Check if archive table exists
                 tables = connection.tables()
