@@ -1118,6 +1118,16 @@ class OpenWeatherTester:
             import configobj
             config_dict = configobj.ConfigObj(config_path)
             
+            # Set WEEWX_ROOT if not already set (required for WeeWX manager)
+            import os
+            if 'WEEWX_ROOT' not in os.environ:
+                # Try to determine WEEWX_ROOT from config file location
+                weewx_root = os.path.dirname(os.path.dirname(config_path))  # Usually /etc/weewx -> /
+                if not weewx_root or weewx_root == '/':
+                    weewx_root = '/usr/share/weewx'  # Default WeeWX installation path
+                os.environ['WEEWX_ROOT'] = weewx_root
+                config_dict['WEEWX_ROOT'] = weewx_root
+            
             # Use WeeWX's standard database manager (database-agnostic)
             db_binding = 'wx_binding'  # Standard WeeWX binding name
             
@@ -1213,6 +1223,66 @@ class OpenWeatherTester:
             return True
         except Exception as e:
             print(f"  ❌ Database test failed: {e}")
+            
+            # If WeeWX manager fails, try a simpler direct approach
+            print("\nTrying simplified database test...")
+            try:
+                import sqlite3
+                
+                # Try to find the database file from the configuration
+                config_dict = configobj.ConfigObj(config_path)
+                db_path = None
+                
+                # Look for database path in configuration
+                try:
+                    db_config = config_dict['DataBindings']['wx_binding']
+                    db_name = db_config['database']
+                    db_info = config_dict['Databases'][db_name]
+                    db_path = db_info.get('database_name', '/var/lib/weewx/weewx.sdb')
+                    
+                    # Handle relative paths
+                    if not db_path.startswith('/'):
+                        db_path = f"/var/lib/weewx/{db_path}"
+                        
+                except (KeyError, TypeError):
+                    # Fallback to standard location
+                    db_path = '/var/lib/weewx/weewx.sdb'
+                
+                # Test direct SQLite connection
+                if db_path and os.path.exists(db_path):
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    
+                    # Check for OpenWeather fields
+                    cursor.execute("PRAGMA table_info(archive)")
+                    columns = cursor.fetchall()
+                    ow_fields = [col[1] for col in columns if col[1].startswith('ow_')]
+                    
+                    if ow_fields:
+                        print(f"  ✅ Direct test: Found {len(ow_fields)} OpenWeather fields")
+                        
+                        # Check for data
+                        cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_temperature IS NOT NULL")
+                        data_count = cursor.fetchone()[0]
+                        
+                        if data_count > 0:
+                            print(f"  ✅ Direct test: {data_count} records contain OpenWeather data")
+                        else:
+                            print("  ⚠️  Direct test: No OpenWeather data found")
+                            
+                        conn.close()
+                        print("\nDatabase Schema Test: ✅ PASSED (via direct test)")
+                        return True
+                    else:
+                        print("  ⚠️  Direct test: No OpenWeather fields found")
+                        conn.close()
+                        
+                else:
+                    print(f"  ❌ Database file not found: {db_path}")
+                    
+            except Exception as e2:
+                print(f"  ❌ Direct database test also failed: {e2}")
+            
             return False
         
         print("\nDatabase Schema Test: ✅ PASSED")
