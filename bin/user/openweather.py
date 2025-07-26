@@ -551,8 +551,8 @@ class OpenWeatherService(StdService):
     def _initialize_data_collection(self):
         """Initialize data collection components - graceful failure."""
         try:
-            # Set up API client with active fields only
-            self.api_client = OpenWeatherAPIClient(
+            # Set up data collector with active fields only
+            self.api_client = OpenWeatherDataCollector(
                 api_key=self.service_config['api_key'],
                 selected_fields=self.active_fields,  # Use validated fields
                 timeout=int(self.service_config.get('timeout', 30))
