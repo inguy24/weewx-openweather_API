@@ -154,81 +154,6 @@ class FieldSelectionManager:
         return mappings
 
 
-class DatabaseSchemaManager:
-    """Manages dynamic database schema based on field selections."""
-    
-    def __init__(self, config_dict, selected_fields):
-        self.config_dict = config_dict
-        self.selected_fields = selected_fields
-        self.field_manager = FieldSelectionManager()
-    
-    def create_required_fields(self):
-        """Create database fields for selected data only."""
-        
-        # Get database field mappings
-        field_mappings = self.field_manager.get_database_field_mappings(self.selected_fields)
-        
-        # Check existing fields
-        existing_fields = self._check_existing_fields()
-        
-        # Determine missing fields
-        missing_fields = set(field_mappings.keys()) - set(existing_fields)
-        
-        if missing_fields:
-            created_count = self._add_missing_fields(missing_fields, field_mappings)
-            return created_count
-        
-        return 0
-    
-    def _check_existing_fields(self):
-        """Check which OpenWeather fields already exist in database."""
-        try:
-            db_binding = self.config_dict.get('DataBindings', {}).get('wx_binding', 'wx_binding')
-            
-            with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
-                existing_fields = []
-                for column in dbmanager.connection.genSchemaOf('archive'):
-                    field_name = column[1]
-                    if field_name.startswith('ow_'):  # Only OpenWeather fields
-                        existing_fields.append(field_name)
-            
-            return existing_fields
-        except Exception as e:
-            log.error(f"Error checking existing database fields: {e}")
-            return []
-    
-    def _add_missing_fields(self, missing_fields, field_mappings):
-        """Add missing database fields using weectl commands."""
-        import subprocess
-        
-        created_count = 0
-        config_path = self.config_dict.get('config_path', '/etc/weewx/weewx.conf')
-        
-        for field_name in missing_fields:
-            field_type = field_mappings[field_name]
-            
-            try:
-                cmd = ['weectl', 'database', 'add-column', field_name, '--config', config_path, '-y']
-                
-                # Only add --type for REAL/INTEGER (weectl limitation)
-                if field_type in ['REAL', 'INTEGER']:
-                    cmd.insert(-2, '--type')
-                    cmd.insert(-2, field_type)
-                
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                
-                if result.returncode == 0 or 'duplicate column' in result.stderr.lower():
-                    created_count += 1
-                    log.info(f"Created database field: {field_name}")
-                else:
-                    log.warning(f"Failed to create field {field_name}: {result.stderr}")
-                    
-            except Exception as e:
-                log.error(f"Error creating field {field_name}: {e}")
-        
-        return created_count
-
-
 class OpenWeatherAPIError(Exception):
     """Custom exception for OpenWeather API errors."""
     pass
@@ -559,225 +484,350 @@ class OpenWeatherBackgroundThread(threading.Thread):
 
 
 class OpenWeatherService(StdService):
-    """Enhanced OpenWeather service with field selection support."""
+    """Robust OpenWeather service that never breaks WeeWX - graceful degradation only."""
     
     def __init__(self, engine, config_dict):
-        super(OpenWeatherService, self).__init__(engine, config_dict)
+        super().__init__(engine, config_dict)
         
-        # Parse configuration
-        self.config = self._parse_config(config_dict)
+        # Load service configuration (operational settings only from weewx.conf)
+        self.service_config = config_dict.get('OpenWeatherService', {})
         
-        # FIX: Convert string boolean to actual boolean
-        enable = str(self.config.get('enable', 'true')).lower() in ('true', 'yes', '1')
-        if not enable:
-            log.info("OpenWeather service disabled")
-            return
+        # Initialize with safe defaults
+        self.selected_fields = {}
+        self.active_fields = {}  # Fields actually available for collection
+        self.service_enabled = False
         
-        # Initialize field selection
-        self.field_manager = FieldSelectionManager()
-        self.selected_fields = self._parse_field_selection()
-        
-        log.info(f"OpenWeather service field selection: {self.selected_fields}")
-        
-        # Setup unit system for selected fields
-        self._setup_unit_system()
-        
-        # Start background data collection
-        self.background_thread = OpenWeatherBackgroundThread(
-            self.config, 
-            self.selected_fields
-        )
-        self.background_thread.start()
-        
-        # Bind to archive events
-        self.bind(weewx.NEW_ARCHIVE_RECORD, self.new_archive_record)
-        
-        log.info("OpenWeather service initialized successfully")
-    
-    def _parse_config(self, config_dict):
-        """Parse OpenWeather service configuration."""
-        service_config = config_dict.get('OpenWeatherService', {})
-        
-        # Add station coordinates to config
-        station_config = config_dict.get('Station', {})
-        service_config['Station'] = station_config
-        
-        return service_config
-    
-    def _parse_field_selection(self):
-        """Parse field selection from configuration."""
-        field_config = self.config.get('field_selection', {})
-        
-        # If no field selection specified, use 'standard' defaults
-        if not field_config:
-            return self.field_manager.get_smart_default_fields('standard')
-        
-        # If complexity level specified, use smart defaults
-        complexity = field_config.get('complexity_level')
-        if complexity and complexity != 'custom':
-            return self.field_manager.get_smart_default_fields(complexity)
-        
-        # Handle custom field selection - convert ConfigObj boolean format to lists
-        custom_selection = {}
-        
-        # Process current_weather module
-        current_weather_config = field_config.get('current_weather', {})
-        if isinstance(current_weather_config, dict):
-            # Convert {field_name: True/False} to [field_name, ...]
-            selected_fields = []
-            for field_name, enabled in current_weather_config.items():
-                # Handle both string and boolean values from ConfigObj
-                if isinstance(enabled, str):
-                    enabled = enabled.lower() in ('true', 'yes', '1')
-                if enabled:
-                    selected_fields.append(field_name)
-            custom_selection['current_weather'] = selected_fields
-        else:
-            custom_selection['current_weather'] = current_weather_config or []
-        
-        # Process air_quality module
-        air_quality_config = field_config.get('air_quality', {})
-        if isinstance(air_quality_config, dict):
-            # Convert {field_name: True/False} to [field_name, ...]
-            selected_fields = []
-            for field_name, enabled in air_quality_config.items():
-                # Handle both string and boolean values from ConfigObj
-                if isinstance(enabled, str):
-                    enabled = enabled.lower() in ('true', 'yes', '1')
-                if enabled:
-                    selected_fields.append(field_name)
-            custom_selection['air_quality'] = selected_fields
-        else:
-            custom_selection['air_quality'] = air_quality_config or []
-        
-        # Validate custom selection
-        return self.field_manager.validate_field_selection(custom_selection)
-        
-    def _setup_unit_system(self):
-        """Setup WeeWX unit system for selected fields."""
-        
-        # Map observations to unit groups
-        obs_group_dict_updates = {}
-        
-        # Only add unit mappings for selected fields
-        field_mappings = self.field_manager.get_database_field_mappings(self.selected_fields)
-        
-        for db_field in field_mappings.keys():
-            if db_field.startswith('ow_'):
-                field_name = db_field[3:]  # Remove 'ow_' prefix
+        try:
+            # Load field selection from extension-managed file (NOT weewx.conf)
+            self.selected_fields = self._load_field_selection()
+            
+            # Validate and clean field selection (never fails - just logs issues)
+            self.active_fields = self._validate_and_clean_selection()
+            
+            if self.active_fields:
+                # Initialize data collection if we have usable fields
+                self._initialize_data_collection()
+                self.service_enabled = True
+                log.info(f"OpenWeather service started successfully ({self._count_active_fields()} fields active)")
+            else:
+                log.error("OpenWeather service disabled - no usable fields available")
+                log.error("HINT: Run 'weectl extension reconfigure OpenWeather' to fix configuration")
                 
-                # Determine appropriate unit group
-                if field_name in ['temperature', 'feels_like', 'temp_min', 'temp_max']:
-                    obs_group_dict_updates[db_field] = 'group_temperature'
-                elif field_name in ['pressure', 'sea_level', 'grnd_level']:
-                    obs_group_dict_updates[db_field] = 'group_pressure'
-                elif field_name == 'humidity':
-                    obs_group_dict_updates[db_field] = 'group_percent'
-                elif field_name in ['wind_speed', 'wind_gust']:
-                    obs_group_dict_updates[db_field] = 'group_speed'
-                elif field_name == 'wind_direction':
-                    obs_group_dict_updates[db_field] = 'group_direction'
-                elif field_name in ['visibility', 'rain_1h', 'rain_3h', 'snow_1h', 'snow_3h']:
-                    obs_group_dict_updates[db_field] = 'group_distance'
-                elif field_name in ['pm25', 'pm10', 'ozone', 'no2', 'so2', 'co', 'nh3', 'no']:
-                    obs_group_dict_updates[db_field] = 'group_concentration'
-                elif field_name == 'aqi':
-                    obs_group_dict_updates[db_field] = 'group_count'
-                elif field_name in ['cloud_cover']:
-                    obs_group_dict_updates[db_field] = 'group_percent'
-                else:
-                    obs_group_dict_updates[db_field] = 'group_count'
-        
-        # Apply unit group mappings
-        weewx.units.obs_group_dict.update(obs_group_dict_updates)
-        
-        # Setup unit definitions and formatting
-        weewx.units.USUnits['group_concentration'] = 'microgram_per_meter_cubed'
-        weewx.units.MetricUnits['group_concentration'] = 'microgram_per_meter_cubed'
-        weewx.units.MetricWXUnits['group_concentration'] = 'microgram_per_meter_cubed'
-        
-        # Default formatting
-        format_updates = {
-            'microgram_per_meter_cubed': '%.1f'
-        }
-        weewx.units.default_unit_format_dict.update(format_updates)
-        
-        # Default labels
-        label_updates = {
-            'microgram_per_meter_cubed': ' μg/m³'
-        }
-        weewx.units.default_unit_label_dict.update(label_updates)
-        
-        log.debug(f"Unit system configured for {len(obs_group_dict_updates)} OpenWeather fields")
+        except Exception as e:
+            # NEVER let OpenWeather break WeeWX startup
+            log.error(f"OpenWeather service initialization failed: {e}")
+            log.error("OpenWeather data collection disabled - WeeWX will continue normally")
+            self.service_enabled = False
     
-    def new_archive_record(self, event):
-        """Inject OpenWeather data into archive records."""
-        # FIX: Convert string boolean to actual boolean
-        enable = str(self.config.get('enable', 'true')).lower() in ('true', 'yes', '1')
-        if not enable:
+    def _load_field_selection(self):
+        """Load field selection from extension-managed file - never fails."""
+        selection_file = '/etc/weewx/openweather_fields.conf'
+        
+        try:
+            if os.path.exists(selection_file):
+                config = configobj.ConfigObj(selection_file)
+                selected_fields = config.get('selected_fields', {})
+                
+                if not selected_fields:
+                    log.warning("No field selection found in configuration file")
+                    return {}
+                
+                log.info(f"Loaded field selection from {selection_file}: {list(selected_fields.keys())}")
+                return selected_fields
+            else:
+                log.error(f"Field selection file not found: {selection_file}")
+                log.error("This usually means the extension was not properly installed")
+                log.error("HINT: Run 'weectl extension install weewx-openweather.zip' to properly install")
+                return {}
+                
+        except Exception as e:
+            log.error(f"Failed to load field selection from {selection_file}: {e}")
+            log.error("OpenWeather service will be disabled")
+            return {}
+    
+    def _validate_and_clean_selection(self):
+        """Validate field selection and return only usable fields - never fails."""
+        
+        if not self.selected_fields:
+            log.warning("No field selection available - OpenWeather collection disabled")
+            return {}
+        
+        field_manager = FieldSelectionManager()
+        active_fields = {}
+        total_selected = 0
+        
+        try:
+            # Get expected database fields based on selection
+            expected_fields = field_manager.get_database_field_mappings(self.selected_fields)
+            
+            if not expected_fields:
+                log.warning("No database fields required for current selection")
+                return {}
+            
+            # Check which fields actually exist in database
+            existing_db_fields = self._get_existing_database_fields()
+            
+            # Validate each module's fields
+            for module, fields in self.selected_fields.items():
+                if not fields:
+                    continue
+                    
+                if fields == 'all':
+                    # Handle 'all' selection
+                    module_fields = self._get_all_fields_for_module(module, field_manager)
+                    total_selected += len(module_fields)
+                    active_module_fields = self._validate_module_fields(module, module_fields, expected_fields, existing_db_fields, field_manager)
+                elif isinstance(fields, list):
+                    # Handle specific field list
+                    total_selected += len(fields)
+                    active_module_fields = self._validate_module_fields(module, fields, expected_fields, existing_db_fields, field_manager)
+                else:
+                    log.warning(f"Invalid field selection format for module '{module}': {fields}")
+                    continue
+                
+                if active_module_fields:
+                    active_fields[module] = active_module_fields
+            
+            # Validate forecast table if needed
+            self._validate_forecast_table()
+            
+            # Summary logging
+            total_active = self._count_active_fields(active_fields)
+            if total_active > 0:
+                log.info(f"Field validation complete: {total_active}/{total_selected} fields active")
+                if total_active < total_selected:
+                    log.warning(f"{total_selected - total_active} fields unavailable - see errors above")
+                    log.warning("HINT: Run 'weectl extension reconfigure OpenWeather' to fix field issues")
+                
+                # Check for new fields available
+                self._check_for_new_fields(field_manager)
+            else:
+                log.error("No usable fields found - all fields have issues")
+            
+            return active_fields
+            
+        except Exception as e:
+            log.error(f"Field validation failed: {e}")
+            return {}
+    
+    def _validate_module_fields(self, module, fields, expected_fields, existing_db_fields, field_manager):
+        """Validate fields for a specific module - never fails."""
+        active_fields = []
+        
+        if not fields:
+            return active_fields
+        
+        field_list = fields if isinstance(fields, list) else []
+        
+        for field in field_list:
+            try:
+                # Find the database field name for this logical field
+                db_field = self._get_database_field_name(module, field, field_manager)
+                
+                if not db_field:
+                    log.warning(f"Unknown field '{field}' in module '{module}' - skipping")
+                    continue
+                
+                if db_field not in existing_db_fields:
+                    log.error(f"Database field '{db_field}' missing for '{module}.{field}' - skipping")
+                    log.error(f"HINT: Run 'weectl extension reconfigure OpenWeather' to add missing fields")
+                    continue
+                
+                # Field is valid and available
+                active_fields.append(field)
+                
+            except Exception as e:
+                log.error(f"Error validating field '{field}' in module '{module}': {e}")
+                continue
+        
+        if active_fields:
+            log.info(f"Module '{module}': {len(active_fields)}/{len(field_list)} fields active")
+        else:
+            log.warning(f"Module '{module}': no usable fields")
+        
+        return active_fields
+    
+    def _get_database_field_name(self, module, field, field_manager):
+        """Get database field name for a logical field name."""
+        try:
+            all_fields = field_manager.get_all_available_fields()
+            if module in all_fields:
+                for category_data in all_fields[module]['categories'].values():
+                    if field in category_data['fields']:
+                        return category_data['fields'][field]['database_field']
+        except Exception as e:
+            log.error(f"Error looking up database field for {module}.{field}: {e}")
+        return None
+    
+    def _get_all_fields_for_module(self, module, field_manager):
+        """Get all available fields for a module when 'all' is selected."""
+        try:
+            all_fields = field_manager.get_all_available_fields()
+            if module in all_fields:
+                module_fields = []
+                for category_data in all_fields[module]['categories'].values():
+                    module_fields.extend(category_data['fields'].keys())
+                return module_fields
+        except Exception as e:
+            log.error(f"Error getting all fields for module '{module}': {e}")
+        return []
+    
+    def _validate_forecast_table(self):
+        """Validate forecast table if needed - never fails."""
+        forecast_modules = ['forecast_daily', 'forecast_hourly', 'forecast_air_quality']
+        needs_forecast_table = any(module in self.selected_fields for module in forecast_modules)
+        
+        if not needs_forecast_table:
             return
         
         try:
-            # Get latest data from background thread
-            latest_data = self.background_thread.get_latest_data()
+            db_binding = 'wx_binding'
+            with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
+                dbmanager.connection.execute("SELECT 1 FROM openweather_forecast LIMIT 1")
+                log.info("Forecast table validated successfully")
+        except Exception as e:
+            log.error(f"Forecast table missing or inaccessible: {e}")
+            log.error("Forecast modules will be disabled")
+            log.error("HINT: Run 'weectl extension reconfigure OpenWeather' to create forecast table")
             
-            if latest_data:
-                # Check data freshness
-                current_time = time.time()
-                weather_age = current_time - latest_data.get('ow_weather_timestamp', 0)
-                air_quality_age = current_time - latest_data.get('ow_air_quality_timestamp', 0)
-                
-                # FIX: Convert string to integer
-                max_age = int(self.config.get('max_data_age', 7200))  # 2 hours default
-                
-                # Inject data that isn't too old
-                injected_fields = []
-                for field_name, value in latest_data.items():
-                    if value is not None:
-                        if field_name.startswith('ow_weather_') and weather_age <= max_age:
-                            event.record[field_name] = value
-                            if not field_name.endswith('_timestamp'):
-                                injected_fields.append(field_name)
-                        elif field_name.startswith('ow_air_quality_') and air_quality_age <= max_age:
-                            event.record[field_name] = value
-                            if not field_name.endswith('_timestamp'):
-                                injected_fields.append(field_name)
-                        elif field_name.startswith('ow_') and not field_name.endswith('_timestamp'):
-                            # For other fields, use the more recent timestamp
-                            data_age = min(weather_age, air_quality_age)
-                            if data_age <= max_age:
-                                event.record[field_name] = value
-                                injected_fields.append(field_name)
-                
-                # FIX: Convert string boolean to actual boolean
-                log_success = str(self.config.get('log_success', 'false')).lower() in ('true', 'yes', '1')
-                if injected_fields and log_success:
-                    log.info(f"Injected OpenWeather data: {len(injected_fields)} fields")
+            # Remove forecast modules from active fields
+            for module in forecast_modules:
+                if module in self.active_fields:
+                    del self.active_fields[module]
+                    log.warning(f"Disabled forecast module: {module}")
+    
+    def _get_existing_database_fields(self):
+        """Get list of existing OpenWeather fields - never fails."""
+        try:
+            db_binding = 'wx_binding'
+            with weewx.manager.open_manager_with_config(self.config_dict, db_binding) as dbmanager:
+                existing_fields = []
+                for column in dbmanager.connection.genSchemaOf('archive'):
+                    field_name = column[1]
+                    if field_name.startswith('ow_'):
+                        existing_fields.append(field_name)
+                return existing_fields
+        except Exception as e:
+            log.error(f"Error checking database fields: {e}")
+            return []
+    
+    def _check_for_new_fields(self, field_manager):
+        """Check if new fields are available that user hasn't selected."""
+        try:
+            all_available = field_manager.get_all_available_fields()
             
+            for module, module_data in all_available.items():
+                if module not in self.selected_fields or not self.selected_fields[module]:
+                    # Module not selected at all
+                    all_module_fields = self._get_all_fields_for_module(module, field_manager)
+                    if all_module_fields:
+                        log.info(f"New module available: '{module}' with {len(all_module_fields)} fields")
+                        log.info(f"HINT: Run 'weectl extension reconfigure OpenWeather' to enable new features")
+                elif self.selected_fields[module] != 'all':
+                    # Check for new fields in selected modules
+                    selected_fields = self.selected_fields[module] if isinstance(self.selected_fields[module], list) else []
+                    all_module_fields = self._get_all_fields_for_module(module, field_manager)
+                    new_fields = [f for f in all_module_fields if f not in selected_fields]
+                    
+                    if new_fields:
+                        log.info(f"New fields available in module '{module}': {new_fields}")
+                        log.info(f"HINT: Run 'weectl extension reconfigure OpenWeather' to enable new fields")
+                        
+        except Exception as e:
+            log.debug(f"Error checking for new fields: {e}")
+    
+    def _count_active_fields(self, fields=None):
+        """Count total active fields across all modules."""
+        if fields is None:
+            fields = self.active_fields
+        return sum(len(module_fields) for module_fields in fields.values() if isinstance(module_fields, list))
+    
+    def _initialize_data_collection(self):
+        """Initialize data collection components - graceful failure."""
+        try:
+            # Set up API client with active fields only
+            self.api_client = OpenWeatherAPIClient(
+                api_key=self.service_config['api_key'],
+                selected_fields=self.active_fields,  # Use validated fields
+                timeout=int(self.service_config.get('timeout', 30))
+            )
+            
+            # Set up background collection thread
+            self.background_thread = OpenWeatherBackgroundThread(
+                config=self.service_config,
+                selected_fields=self.active_fields,  # Use validated fields
+                api_client=self.api_client
+            )
+            
+            # Start background collection
+            self.background_thread.start()
+            
+            log.info("Data collection initialized successfully")
+            
+        except Exception as e:
+            log.error(f"Failed to initialize data collection: {e}")
+            log.error("OpenWeather data collection disabled")
+            self.service_enabled = False
+    
+    def new_archive_record(self, event):
+        """Inject OpenWeather data into archive record - never fails."""
+        
+        if not self.service_enabled:
+            return  # Silently skip if service is disabled
+        
+        try:
+            # Get latest collected data
+            collected_data = self.get_latest_data()
+            
+            if not collected_data:
+                return  # No data available
+            
+            # Build record with all expected fields, using None for missing data
+            record_update = {}
+            field_manager = FieldSelectionManager()
+            expected_fields = field_manager.get_database_field_mappings(self.active_fields)
+            
+            fields_injected = 0
+            for db_field, field_type in expected_fields.items():
+                if db_field in collected_data and collected_data[db_field] is not None:
+                    # Successfully collected data
+                    record_update[db_field] = collected_data[db_field]
+                    fields_injected += 1
+                else:
+                    # Missing data - use None/NULL
+                    record_update[db_field] = None
+            
+            # Update the archive record
+            event.record.update(record_update)
+            
+            if fields_injected > 0:
+                log.debug(f"Injected OpenWeather data: {fields_injected}/{len(expected_fields)} fields")
             else:
-                log.debug("No OpenWeather data available for archive record")
+                log.debug("No OpenWeather data available for injection")
                 
         except Exception as e:
-            # FIX: Convert string boolean to actual boolean
-            log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
-            if log_errors:
-                log.error(f"Error injecting OpenWeather data: {e}")
+            log.error(f"Error injecting OpenWeather data: {e}")
+            # Continue without OpenWeather data - don't break the archive record
+    
+    def get_latest_data(self):
+        """Get latest collected data - never fails."""
+        try:
+            if hasattr(self, 'background_thread') and self.background_thread:
+                return self.background_thread.get_latest_data()
+        except Exception as e:
+            log.error(f"Error getting latest data: {e}")
+        return {}
     
     def shutDown(self):
-        """Shutdown the service."""
-        if hasattr(self, 'background_thread'):
-            self.background_thread.shutdown()
-            self.background_thread.join(timeout=10)
-        
-        log.info("OpenWeather service shut down")
+        """Clean shutdown - never fails."""
+        try:
+            if hasattr(self, 'background_thread') and self.background_thread:
+                self.background_thread.stop()
+                log.info("OpenWeather service shutdown complete")
+        except Exception as e:
+            log.error(f"Error during OpenWeather shutdown: {e}")
 
-
-# Extension entry point
-def loader(config_dict, engine):
-    """Load the OpenWeather service."""
-    return OpenWeatherService(engine, config_dict)
-
-
+            
 # ============================================================================
 # BUILT-IN TESTING FUNCTIONALITY
 # ============================================================================
