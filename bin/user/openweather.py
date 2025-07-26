@@ -12,16 +12,16 @@ import json
 import configobj
 import time
 import threading
-# import queue
+import queue
 import urllib.request
 import urllib.parse
 import urllib.error
 import socket
 import yaml
 import os
-# import argparse
-# import sys
-# from typing import Dict, List, Optional, Any, Tuple
+import argparse
+import sys
+from typing import Dict, List, Optional, Any, Tuple
 
 import weewx
 from weewx.engine import StdService
@@ -48,22 +48,98 @@ class FieldSelectionManager:
         }
     
     def _load_field_definitions(self):
-        """Load field definitions from flat YAML structure."""
+        """Load field definitions from new API-first YAML structure."""
         try:
             with open(self.config_path['definitions'], 'r') as f:
-                return yaml.safe_load(f)['field_definitions']
+                api_config = yaml.safe_load(f)
+            
+            # Convert API-first structure to flat field definitions for compatibility
+            field_definitions = {}
+            
+            for module_name, module_config in api_config.get('api_modules', {}).items():
+                for field_name, field_config in module_config.get('fields', {}).items():
+                    field_definitions[field_name] = field_config
+            
+            return field_definitions
+            
         except Exception as e:
             log.error(f"Error loading field definitions: {e}")
             return {}
     
     def get_database_field_mappings(self, selected_fields):
-        """Convert flat field selection to database field mappings."""
+        """Convert field selection to database field mappings - handle both formats."""
         mappings = {}
-        for field_name, selected in selected_fields.items():
-            if selected and field_name in self.field_definitions:
-                field_info = self.field_definitions[field_name]
-                mappings[field_info['database_field']] = field_info['database_type']
+        
+        if not selected_fields:
+            return mappings
+        
+        # Handle module-based format: {'current_weather': ['temp', 'humidity']}
+        if any(isinstance(v, list) for v in selected_fields.values()):
+            for module_name, field_list in selected_fields.items():
+                if not isinstance(field_list, list):
+                    continue
+                
+                for service_field in field_list:
+                    # Map service field back to database field using known mappings
+                    db_field = self._map_service_to_database_field(service_field, module_name)
+                    if db_field:
+                        db_type = self._get_database_type_for_field(db_field)
+                        mappings[db_field] = db_type
+        
+        # Handle flat format: {'ow_temperature': True}
+        else:
+            for field_name, selected in selected_fields.items():
+                if selected and field_name in self.field_definitions:
+                    field_info = self.field_definitions[field_name]
+                    mappings[field_info['database_field']] = field_info['database_type']
+        
         return mappings
+
+    def _map_service_to_database_field(self, service_field, module_name):
+        """Map service field name to database field name."""
+        # Load from YAML if available, otherwise use hardcoded mapping
+        try:
+            with open(self.config_path['definitions'], 'r') as f:
+                api_config = yaml.safe_load(f)
+            
+            module_config = api_config.get('api_modules', {}).get(module_name, {})
+            for field_name, field_config in module_config.get('fields', {}).items():
+                if field_config.get('service_field') == service_field:
+                    return field_config.get('database_field')
+        except:
+            pass
+        
+        # Fallback to simple mapping
+        simple_mapping = {
+            'temp': 'ow_temperature',
+            'feels_like': 'ow_feels_like',
+            'humidity': 'ow_humidity', 
+            'pressure': 'ow_pressure',
+            'wind_speed': 'ow_wind_speed',
+            'wind_direction': 'ow_wind_direction',
+            'pm2_5': 'ow_pm25',
+            'pm10': 'ow_pm10',
+            'aqi': 'ow_aqi',
+            'ozone': 'ow_ozone',
+            'no2': 'ow_no2',
+            'so2': 'ow_so2',
+            'co': 'ow_co'
+        }
+        
+        return simple_mapping.get(service_field, f'ow_{service_field}')
+
+    def _get_database_type_for_field(self, database_field):
+        """Get database type for a field."""
+        # Most fields are REAL, exceptions are VARCHAR
+        varchar_fields = ['ow_weather_main', 'ow_weather_description', 'ow_weather_icon']
+        integer_fields = ['ow_aqi']
+        
+        if database_field in varchar_fields:
+            return 'VARCHAR(50)'
+        elif database_field in integer_fields:
+            return 'INTEGER'
+        else:
+            return 'REAL'
     
     def get_api_path_mappings(self, selected_fields):
         """Get API path mappings for flat field selection."""
@@ -292,40 +368,107 @@ class OpenWeatherService(StdService):
     """Robust OpenWeather service that never breaks WeeWX - graceful degradation only."""
     
     def __init__(self, engine, config_dict):
-        super().__init__(engine, config_dict)
+        super(OpenWeatherService, self).__init__(engine, config_dict)
         
-        # Load service configuration (operational settings only from weewx.conf)
+        log.info(f"OpenWeather service version {VERSION} starting")
+        
+        self.engine = engine
+        self.config_dict = config_dict
+        
+        # Get OpenWeather configuration
         self.service_config = config_dict.get('OpenWeatherService', {})
         
-        # Initialize with safe defaults
-        self.selected_fields = {}
-        self.active_fields = {}  # Fields actually available for collection
-        self.service_enabled = False
+        if not self._validate_basic_config():
+            log.error("OpenWeather service disabled due to configuration issues")
+            return
         
-        try:
-            # Load field selection from extension-managed file (NOT weewx.conf)
-            self.selected_fields = self._load_field_selection()
+        # Load field selection from new config format (written by install.py)
+        self.selected_fields = self._load_field_selection_from_config()
+        
+        if not self.selected_fields:
+            log.error("No field selection found - service disabled")
+            log.error("HINT: Run 'weectl extension reconfigure OpenWeather' to configure fields")
+            return
+        
+        # Validate and clean field selection
+        self.active_fields = self._validate_and_clean_selection()
+        
+        if not self.active_fields:
+            log.error("No usable fields found - all fields have issues")
+            log.error("OpenWeather service disabled - no usable fields available")
+            log.error("HINT: Run 'weectl extension reconfigure OpenWeather' to fix configuration")
+            return
+        
+        # Continue with existing initialization logic...
+        self._initialize_data_collection()
+        self._setup_unit_system()
+        
+        # Bind to archive events
+        self.bind(weewx.NEW_ARCHIVE_RECORD, self.new_archive_record)
+        
+        log.info("OpenWeather service initialized successfully")
+
+    def _validate_basic_config(self):
+        """Basic configuration validation - keep existing logic."""
+        if not self.service_config:
+            log.error("OpenWeatherService configuration section not found")
+            return False
+        
+        if not self.service_config.get('enable', '').lower() == 'true':
+            log.info("OpenWeather service disabled in configuration")
+            return False
+        
+        api_key = self.service_config.get('api_key', '')
+        if not api_key or api_key == 'REPLACE_WITH_YOUR_API_KEY':
+            log.error("Valid API key not configured")
+            log.error("HINT: Run 'weectl extension reconfigure OpenWeather'")
+            return False
+        
+        return True 
+
+    def _load_field_selection_from_config(self):
+        """Load field selection from weewx.conf (written by new install.py)."""
+        field_selection_config = self.service_config.get('field_selection', {})
+        
+        if not field_selection_config:
+            log.error("No field_selection section found in configuration")
+            return {}
+        
+        # Read field selections per module (format: 'current_weather' = 'temp,humidity,pressure')
+        selected_fields = {}
+        
+        for module_name, field_string in field_selection_config.items():
+            if module_name == 'complexity_level':
+                continue  # Skip metadata
             
-            # Validate and clean field selection (never fails - just logs issues)
-            self.active_fields = self._validate_and_clean_selection()
-            
-            if self.active_fields:
-                # Initialize data collection if we have usable fields
-                self._initialize_data_collection()
-                self.service_enabled = True
-                log.info(f"OpenWeather service started successfully ({self._count_active_fields()} fields active)")
+            if isinstance(field_string, str) and field_string:
+                # Parse comma-separated field list
+                field_list = [f.strip() for f in field_string.split(',') if f.strip()]
+                if field_list:
+                    selected_fields[module_name] = field_list
+                    log.info(f"Loaded {len(field_list)} fields for module '{module_name}'")
+                else:
+                    log.warning(f"No fields configured for module '{module_name}'")
             else:
-                log.error("OpenWeather service disabled - no usable fields available")
-                log.error("HINT: Run 'weectl extension reconfigure OpenWeather' to fix configuration")
-                
-        except Exception as e:
-            # NEVER let OpenWeather break WeeWX startup
-            log.error(f"OpenWeather service initialization failed: {e}")
-            log.error("OpenWeather data collection disabled - WeeWX will continue normally")
-            self.service_enabled = False
-    
+                log.warning(f"Invalid field configuration for module '{module_name}': {field_string}")
+        
+        if not selected_fields:
+            log.error("No field selections found in configuration")
+            return {}
+        
+        log.info(f"Loaded field selection from configuration: {list(selected_fields.keys())}")
+        return selected_fields
+
     def _load_field_selection(self):
-        """Load field selection from extension-managed file - never fails."""
+        """Load field selection - try config first, then fallback to old file method."""
+        # Try new config format first
+        config_selection = self._load_field_selection_from_config()
+        if config_selection:
+            return config_selection
+        
+        # Fallback to old file-based method for backward compatibility
+        log.warning("No field selection in main config, checking legacy file...")
+        
         selection_file = '/etc/weewx/openweather_fields.conf'
         
         try:
@@ -335,10 +478,10 @@ class OpenWeatherService(StdService):
                 selected_fields = field_selection.get('selected_fields', {})
                 
                 if not selected_fields:
-                    log.warning("No field selection found in configuration file")
+                    log.warning("No field selection found in legacy configuration file")
                     return {}
                 
-                log.info(f"Loaded field selection from {selection_file}: {list(selected_fields.keys())}")
+                log.info(f"Loaded legacy field selection from {selection_file}: {list(selected_fields.keys())}")
                 return selected_fields
             else:
                 log.error(f"Field selection file not found: {selection_file}")
@@ -350,20 +493,43 @@ class OpenWeatherService(StdService):
             log.error(f"Failed to load field selection from {selection_file}: {e}")
             log.error("OpenWeather service will be disabled")
             return {}
-    
+        
     def _validate_and_clean_selection(self):
-        """Validate field selection and return only usable fields - never fails."""
+        """Validate field selection and return only usable fields - updated for new config format."""
         
         if not self.selected_fields:
             log.warning("No field selection available - OpenWeather collection disabled")
             return {}
         
+        # NEW: Check if we have the new module-based format or old flat format
+        if self._is_module_based_format(self.selected_fields):
+            return self._validate_module_based_selection()
+        else:
+            return self._validate_flat_selection()
+
+    def _is_module_based_format(self, selected_fields):
+        """Determine if field selection is in module-based format or flat format."""
+        if not selected_fields:
+            return False
+        
+        # Check if values are lists (module format) or booleans (flat format)
+        for key, value in selected_fields.items():
+            if isinstance(value, list):
+                return True
+            elif isinstance(value, bool) or value in ['true', 'false']:
+                return False
+        
+        # Default to module-based if we can't determine
+        return True
+
+    def _validate_module_based_selection(self):
+        """Validate module-based field selection (new format from install.py)."""
         field_manager = FieldSelectionManager()
         active_fields = {}
         total_selected = 0
         
         try:
-            # Get expected database fields based on selection
+            # Get expected database fields based on selection  
             expected_fields = field_manager.get_database_field_mappings(self.selected_fields)
             
             if not expected_fields:
@@ -384,7 +550,7 @@ class OpenWeatherService(StdService):
                     total_selected += len(module_fields)
                     active_module_fields = self._validate_module_fields(module, module_fields, expected_fields, existing_db_fields, field_manager)
                 elif isinstance(fields, list):
-                    # Handle specific field list
+                    # Handle specific field list (normal case)
                     total_selected += len(fields)
                     active_module_fields = self._validate_module_fields(module, fields, expected_fields, existing_db_fields, field_manager)
                 else:
@@ -394,9 +560,6 @@ class OpenWeatherService(StdService):
                 if active_module_fields:
                     active_fields[module] = active_module_fields
             
-            # Validate forecast table if needed
-            self._validate_forecast_table()
-            
             # Summary logging
             total_active = self._count_active_fields(active_fields)
             if total_active > 0:
@@ -404,9 +567,6 @@ class OpenWeatherService(StdService):
                 if total_active < total_selected:
                     log.warning(f"{total_selected - total_active} fields unavailable - see errors above")
                     log.warning("HINT: Run 'weectl extension reconfigure OpenWeather' to fix field issues")
-                
-                # Check for new fields available
-                self._check_for_new_fields(field_manager)
             else:
                 log.error("No usable fields found - all fields have issues")
             
@@ -415,7 +575,81 @@ class OpenWeatherService(StdService):
         except Exception as e:
             log.error(f"Field validation failed: {e}")
             return {}
-    
+
+    def _validate_flat_selection(self):
+        """Validate flat field selection (legacy format) - convert to module format."""
+        log.info("Converting flat field selection to module format")
+        
+        # Convert flat format to module format for compatibility
+        field_manager = FieldSelectionManager()
+        module_fields = {}
+        
+        try:
+            for field_name, selected in self.selected_fields.items():
+                if not selected:
+                    continue
+                
+                # Determine which module this field belongs to based on field name
+                if field_name.startswith('ow_'):
+                    # Map database field name back to service field name
+                    service_field = self._map_database_to_service_field(field_name)
+                    if not service_field:
+                        log.warning(f"Unknown field mapping for {field_name}")
+                        continue
+                    
+                    # Determine module based on field characteristics
+                    module = self._determine_module_for_field(field_name)
+                    if not module:
+                        log.warning(f"Cannot determine module for field {field_name}")
+                        continue
+                    
+                    if module not in module_fields:
+                        module_fields[module] = []
+                    module_fields[module].append(service_field)
+            
+            if module_fields:
+                log.info(f"Converted flat selection to modules: {list(module_fields.keys())}")
+                # Validate the converted module format
+                self.selected_fields = module_fields
+                return self._validate_module_based_selection()
+            else:
+                log.error("No valid fields found in flat selection")
+                return {}
+                
+        except Exception as e:
+            log.error(f"Failed to convert flat field selection: {e}")
+            return {}
+
+    def _map_database_to_service_field(self, database_field):
+        """Map database field name back to service field name."""
+        # Simple mapping for common fields
+        mapping = {
+            'ow_temperature': 'temp',
+            'ow_feels_like': 'feels_like', 
+            'ow_humidity': 'humidity',
+            'ow_pressure': 'pressure',
+            'ow_wind_speed': 'wind_speed',
+            'ow_wind_direction': 'wind_direction',
+            'ow_pm25': 'pm2_5',
+            'ow_pm10': 'pm10',
+            'ow_aqi': 'aqi',
+            'ow_ozone': 'ozone',
+            'ow_no2': 'no2',
+            'ow_so2': 'so2',
+            'ow_co': 'co'
+        }
+        
+        return mapping.get(database_field, database_field.replace('ow_', ''))
+
+    def _determine_module_for_field(self, field_name):
+        """Determine which module a field belongs to based on field name."""
+        if any(pollutant in field_name for pollutant in ['pm25', 'pm10', 'aqi', 'ozone', 'no2', 'so2', 'co']):
+            return 'air_quality'
+        elif any(weather in field_name for weather in ['temp', 'humidity', 'pressure', 'wind', 'cloud', 'rain', 'snow', 'weather']):
+            return 'current_weather'
+        else:
+            return 'current_weather'  # Default
+        
     def _validate_module_fields(self, module, fields, expected_fields, existing_db_fields, field_manager):
         """Validate fields for a specific module - never fails."""
         active_fields = []
