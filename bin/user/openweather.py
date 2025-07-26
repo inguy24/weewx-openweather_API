@@ -527,7 +527,8 @@ class OpenWeatherService(StdService):
         try:
             if os.path.exists(selection_file):
                 config = configobj.ConfigObj(selection_file)
-                selected_fields = config.get('selected_fields', {})
+                field_selection = config.get('field_selection', {})
+                selected_fields = field_selection.get('selected_fields', {})
                 
                 if not selected_fields:
                     log.warning("No field selection found in configuration file")
