@@ -35,7 +35,7 @@ class TerminalUI:
         self.selected_items = set()
     
     def show_complexity_menu(self):
-        """Show complexity level selection menu with dynamic field listings from YAML."""
+        """Dynamic field listings from API-first YAML structure."""
         print("\n" + "="*80)
         print("OPENWEATHER DATA COLLECTION LEVEL")
         print("="*80)
@@ -43,16 +43,31 @@ class TerminalUI:
         print("Each level includes specific fields as listed below:")
         print()
         
-        # Load field definitions dynamically from YAML
         try:
             extension_dir = os.path.dirname(__file__)
-            definitions_path = os.path.join(extension_dir, 'openweather_fields.yaml')
-            with open(definitions_path, 'r') as f:
-                field_definitions = yaml.safe_load(f)['field_definitions']
+            config_path = os.path.join(extension_dir, 'openweather_fields.yaml')
+            with open(config_path, 'r') as f:
+                api_config = yaml.safe_load(f)
+            
+            all_fields = []
+            minimal_fields = []
+            
+            for module_name, module_config in api_config.get('api_modules', {}).items():
+                for field_name, field_config in module_config.get('fields', {}).items():
+                    display_name = field_config.get('display_name', field_name)
+                    complexity_levels = field_config.get('complexity_levels', [])
+                    
+                    all_fields.append(display_name)
+                    if 'minimal' in complexity_levels:
+                        minimal_fields.append(display_name)
+            
+            minimal_fields.sort()
+            all_fields.sort()
+            
         except Exception as e:
             print(f"Warning: Could not load field definitions: {e}")
             print("Using basic descriptions instead of detailed field lists.")
-            # Fallback to current basic implementation
+            
             options = [
                 ("Minimal", "Essential fields for Extension 3 health predictions"),
                 ("All", "Everything available from free OpenWeather APIs"),
@@ -81,52 +96,26 @@ class TerminalUI:
                     print("\nInstallation cancelled by user.")
                     sys.exit(1)
         
-        # Extract fields for each complexity level from YAML
-        minimal_fields = []
-        all_fields = []
-        
-        for field_name, field_info in field_definitions.items():
-            display_name = field_info.get('display_name', field_name)
-            complexity_levels = field_info.get('complexity_levels', [])
-            
-            if 'minimal' in complexity_levels:
-                minimal_fields.append(display_name)
-            if 'all' in complexity_levels:
-                all_fields.append(display_name)
-        
-        # Sort fields alphabetically for consistent presentation
-        minimal_fields.sort()
-        all_fields.sort()
-        
-        # Helper function to format comma-delimited field lists with nice wrapping
         def format_field_list(fields, indent="   "):
             if not fields:
                 return f"{indent}No fields configured"
             
-            # Join with commas and wrap at reasonable length
-            field_text = ", ".join(fields)
-            
-            # Simple line wrapping at approximately 70 characters
             lines = []
             current_line = indent + "Fields: "
             
             for field in fields:
-                # Check if adding this field would make line too long
                 test_line = current_line + field + ", "
                 if len(test_line) > 75 and current_line != indent + "Fields: ":
-                    # Start new line
                     lines.append(current_line.rstrip(", "))
                     current_line = indent + "       " + field + ", "
                 else:
                     current_line = test_line
             
-            # Add the last line
             if current_line.strip():
                 lines.append(current_line.rstrip(", "))
             
             return "\n".join(lines)
         
-        # Display menu with dynamic field lists
         print("1. MINIMAL COLLECTION")
         print(f"   Essential fields for Extension 3 health predictions")
         print(f"   {len(minimal_fields)} database fields")
@@ -144,7 +133,6 @@ class TerminalUI:
         print(f"   Select from {len(all_fields)} available fields")
         print()
         
-        # Get user selection
         while True:
             try:
                 choice = input("Enter choice [1-3]: ").strip()
@@ -162,7 +150,7 @@ class TerminalUI:
             except (KeyboardInterrupt, EOFError):
                 print("\nInstallation cancelled by user.")
                 sys.exit(1)
-    
+
     def show_custom_selection(self, field_definitions):
         """Show flat field selection interface for new YAML structure."""
         import curses
@@ -565,9 +553,27 @@ class OpenWeatherConfigurator:
     
     def __init__(self, config_dict):
         self.config_dict = config_dict
-        # Load field definitions from YAML
         extension_dir = os.path.dirname(__file__)
-        self.field_definitions = self._load_field_definitions(extension_dir)
+        self.api_config = self._load_api_config(extension_dir)
+        self.field_definitions = self._create_flat_field_definitions()
+
+    def _load_api_config(self, extension_dir):
+        """Load API-first configuration from YAML."""
+        try:
+            config_path = os.path.join(extension_dir, 'openweather_fields.yaml')
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            print(f"Warning: Could not load API configuration: {e}")
+            return {'api_modules': {}, 'complexity_definitions': {}}
+
+    def _create_flat_field_definitions(self):
+        """Create flat field_definitions for compatibility with existing methods."""
+        flat_definitions = {}
+        for module_name, module_config in self.api_config.get('api_modules', {}).items():
+            for field_name, field_config in module_config.get('fields', {}).items():
+                flat_definitions[field_name] = field_config
+        return flat_definitions
     
     def _load_field_definitions(self, extension_dir):
         """Load field definitions from YAML file."""
@@ -580,7 +586,7 @@ class OpenWeatherConfigurator:
             return {}
     
     def run_interactive_setup(self):
-        """Complete interactive configuration process."""
+        """Handle new grouped field format in the flow."""
         
         print("\n" + "="*80)
         print("WEEWX OPENWEATHER EXTENSION CONFIGURATION")
@@ -590,45 +596,33 @@ class OpenWeatherConfigurator:
         print("-" * 80)
         
         try:
-            # Step 1: API key setup
             api_key = self._prompt_api_key()
             
-            # Step 2: Module selection
             modules = self._select_modules()
             
-            # Step 3: Field selection
             ui = TerminalUI()
             complexity = ui.show_complexity_menu()
             
             if complexity == 'custom':
-                # Custom field selection
-                selected_fields = ui.show_custom_selection(self.field_definitions)
-                if selected_fields is None:
-                    # User selected no fields, fall back to minimal
+                selected_fields = self._show_custom_selection_grouped(modules)
+                if not selected_fields:
                     complexity = 'minimal'
                     selected_fields = self.get_selected_fields('minimal')
             else:
-                # Use smart defaults
                 selected_fields = self.get_selected_fields(complexity)
             
-            # Step 4: Confirmation
             field_count = self.estimate_field_count(selected_fields)
             confirmation = ui.confirm_selection(complexity, field_count)
-            if confirmation != 'true':  # Check string value
+            if confirmation != 'true':
                 print("\nConfiguration cancelled by user.")
-                return 'false'  # Return string
+                return 'false'
             
-            # Step 5: Database schema creation
             field_mappings = self.get_database_field_mappings(selected_fields)
             db_manager = DatabaseManager(self.config_dict)
             created_count = db_manager.create_database_fields(field_mappings)
-
-            self._save_field_selection(selected_fields)
             
-            # Step 6: Write configuration
             self._write_enhanced_config(api_key, modules, complexity, selected_fields)
             
-            # Step 7: Setup unit system
             self._setup_unit_system()
             
             print("\n" + "="*80)
@@ -644,7 +638,7 @@ class OpenWeatherConfigurator:
             print("  sudo systemctl restart weewx")
             print("="*80)
             
-            return 'true'  # Return string value
+            return 'true'
             
         except KeyboardInterrupt:
             print("\n\nInstallation cancelled by user.")
@@ -654,41 +648,80 @@ class OpenWeatherConfigurator:
             import traceback
             traceback.print_exc()
             return 'false'
-    
-    # === FIELD SELECTION METHODS (merged from FieldSelectionHelper) ===
-    
+         
     def get_selected_fields(self, complexity_level):
-        """Get field selection based on complexity level from YAML data."""
+        """Get fields and group by service modules for openweather.py."""
         if complexity_level == 'all':
-            # Return all fields
-            return {field_name: True for field_name in self.field_definitions.keys()}
+            return self._group_fields_by_module(self.field_definitions.keys())
         elif complexity_level == 'minimal':
-            # Return only fields marked with 'minimal' in complexity_levels
-            selected = {}
+            minimal_fields = []
             for field_name, field_info in self.field_definitions.items():
                 if 'minimal' in field_info.get('complexity_levels', []):
-                    selected[field_name] = True
-            return selected
+                    minimal_fields.append(field_name)
+            return self._group_fields_by_module(minimal_fields)
         elif complexity_level == 'custom':
-            # This shouldn't be called directly for custom - handled in run_interactive_setup
             return {}
         else:
-            # Default to minimal if unknown complexity level
             return self.get_selected_fields('minimal')
-    
+
+    def _group_fields_by_module(self, field_names):
+        """Group YAML field names by service module for openweather.py compatibility."""
+        grouped = {}
+        
+        for field_name in field_names:
+            if field_name not in self.field_definitions:
+                continue
+            
+            field_config = self.field_definitions[field_name]
+            
+            module_name = self._find_module_for_field(field_name)
+            if not module_name:
+                continue
+            
+            service_field = field_config.get('service_field', field_name)
+            
+            if module_name not in grouped:
+                grouped[module_name] = []
+            grouped[module_name].append(service_field)
+        
+        return grouped
+
+    def _find_module_for_field(self, field_name):
+        """Find which API module a field belongs to."""
+        for module_name, module_config in self.api_config.get('api_modules', {}).items():
+            if field_name in module_config.get('fields', {}):
+                return module_name
+        return None
+
     def estimate_field_count(self, selected_fields):
         """Count actual selected fields."""
         return len([f for f in selected_fields.values() if f])
     
     def get_database_field_mappings(self, selected_fields):
-        """Get database mappings for selected fields only."""
+        """Handle both flat and grouped field selection formats."""
         mappings = {}
-        for field_name, selected in selected_fields.items():
-            if selected and field_name in self.field_definitions:
-                field_info = self.field_definitions[field_name]
-                mappings[field_info['database_field']] = field_info['database_type']
+        
+        if isinstance(selected_fields, dict) and any(isinstance(v, list) for v in selected_fields.values()):
+            # Grouped format from get_selected_fields: {'current_weather': ['temp', 'humidity']}
+            for module_name, service_fields in selected_fields.items():
+                module_config = self.api_config.get('api_modules', {}).get(module_name, {})
+                
+                for service_field in service_fields:
+                    for field_name, field_config in module_config.get('fields', {}).items():
+                        if field_config.get('service_field') == service_field:
+                            db_field = field_config['database_field']
+                            db_type = field_config['database_type']
+                            mappings[db_field] = db_type
+                            break
+        else:
+            # Flat format: {'ow_temperature': True}
+            for field_name, selected in selected_fields.items():
+                if selected and field_name in self.field_definitions:
+                    field_info = self.field_definitions[field_name]
+                    mappings[field_info['database_field']] = field_info['database_type']
+        
         return mappings
-    
+
     def _save_field_selection(self, selected_fields):
         """Save ONLY clean field selection data."""
         selection_file = '/etc/weewx/openweather_fields.conf'
@@ -713,9 +746,7 @@ class OpenWeatherConfigurator:
         
         config.write()
         os.chmod(selection_file, 0o644)
-    
-    # === EXISTING METHODS (unchanged) ===
-    
+        
     def _prompt_api_key(self):
         """Prompt for OpenWeatherMap API key with validation."""
         print("\n" + "="*60)
@@ -749,7 +780,7 @@ class OpenWeatherConfigurator:
                 print("API key is required. Please enter a valid key.")
     
     def _select_modules(self):
-        """Interactive module selection - simplified for new flat architecture."""
+        """Data-driven module selection instead of hardcoded."""
         print("\n" + "="*60)
         print("MODULE SELECTION")
         print("="*60)
@@ -757,8 +788,46 @@ class OpenWeatherConfigurator:
         print()
         
         modules = {}
+        api_modules = self.api_config.get('api_modules', {})
         
-        # Current weather module
+        if not api_modules:
+            print("Warning: Using fallback module selection")
+            return self._select_modules_fallback()
+        
+        for module_name, module_config in api_modules.items():
+            print(f"📊 {module_config['display_name']}")
+            print(f"   {module_config['description']}")
+            
+            field_count = len(module_config.get('fields', {}))
+            print(f"   Available fields: {field_count}")
+            print()
+            
+            prompt = f"   Enable {module_config['display_name']}? [Y/n]: "
+            try:
+                response = input(prompt).strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                print("\nInstallation cancelled by user.")
+                sys.exit(1)
+            
+            enabled = response not in ['n', 'no']
+            modules[module_name] = enabled
+            
+            if enabled:
+                print(f"   ✓ {module_config['display_name']} enabled")
+            else:
+                print(f"   - {module_config['display_name']} disabled")
+            print()
+        
+        print("✓ Module selection completed")
+        enabled_list = [name for name, enabled in modules.items() if enabled]
+        print(f"  Enabled modules: {', '.join(enabled_list)}")
+        
+        return modules
+
+    def _select_modules_fallback(self):
+        """Fallback to existing hardcoded module selection if YAML fails."""
+        modules = {}
+        
         print("1. Current Weather Data")
         print("   - Temperature, humidity, pressure, wind")
         print("   - Cloud cover, visibility, weather conditions")
@@ -767,67 +836,53 @@ class OpenWeatherConfigurator:
         
         print()
         
-        # Air quality module
         print("2. Air Quality Data") 
         print("   - PM2.5, PM10, Ozone, NO2, SO2, CO")
         print("   - Air Quality Index (AQI)")
         air_quality = input("   Enable air quality data? [Y/n]: ").strip().lower()
         modules['air_quality'] = air_quality not in ['n', 'no']
         
-        print()
-        print("✓ Module selection completed")
-        enabled = [name for name, enabled in modules.items() if enabled]
-        print(f"  Enabled modules: {', '.join(enabled)}")
-        
         return modules
-    
+
     def _write_enhanced_config(self, api_key, modules, complexity, selected_fields):
-        """Write service configuration to weewx.conf."""
-        # Update the service configuration
+        """Write service config with complete API data from YAML."""
         config_dict = self.config_dict
         
-        # Ensure OpenWeatherService section exists
         if 'OpenWeatherService' not in config_dict:
             config_dict['OpenWeatherService'] = {}
         
         service_config = config_dict['OpenWeatherService']
         
-        # Basic configuration - ALL VALUES AS STRINGS for ConfigObj
         service_config['enable'] = 'true'
         service_config['api_key'] = str(api_key)
         service_config['timeout'] = '30'
         service_config['log_success'] = 'false'
         service_config['log_errors'] = 'true'
         
-        # Module configuration
         if 'modules' not in service_config:
             service_config['modules'] = {}
         
-        current_weather_val = modules.get('current_weather', 'true')
-        if isinstance(current_weather_val, bool):
-            service_config['modules']['current_weather'] = 'true' if current_weather_val else 'false'
-        else:
-            service_config['modules']['current_weather'] = str(current_weather_val)
-            
-        air_quality_val = modules.get('air_quality', 'true')
-        if isinstance(air_quality_val, bool):
-            service_config['modules']['air_quality'] = 'true' if air_quality_val else 'false'
-        else:
-            service_config['modules']['air_quality'] = str(air_quality_val)
-        
-        # Interval configuration
         if 'intervals' not in service_config:
             service_config['intervals'] = {}
         
-        service_config['intervals']['current_weather'] = '3600'
-        service_config['intervals']['air_quality'] = '7200'
+        for module_name, enabled in modules.items():
+            service_config['modules'][module_name] = 'true' if enabled else 'false'
+            
+            if enabled and module_name in self.api_config.get('api_modules', {}):
+                module_config = self.api_config['api_modules'][module_name]
+                interval = module_config.get('recommended_interval', 3600)
+                service_config['intervals'][module_name] = str(interval)
         
-        # Field selection configuration
         if 'field_selection' not in service_config:
             service_config['field_selection'] = {}
         
         service_config['field_selection']['complexity_level'] = str(complexity)
-    
+        
+        if isinstance(selected_fields, dict) and any(isinstance(v, list) for v in selected_fields.values()):
+            for module_name, field_list in selected_fields.items():
+                if field_list:
+                    service_config['field_selection'][module_name] = ','.join(field_list)
+
     def _setup_unit_system(self):
         """Configure WeeWX unit system for OpenWeather fields."""
         print("  Setting up unit system for OpenWeather fields...")
@@ -954,17 +1009,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
         return configuration_result == 'true'  # Convert string to boolean for ExtensionInstaller  
     
     def reconfigure(self, engine):
-        """Support field selection reconfiguration via 'weectl extension reconfigure OpenWeather'.
-        
-        Allows users to change their field selection without reinstalling the extension.
-        Updates database schema to add new fields but preserves existing data.
-        
-        Args:
-            engine: WeeWX engine instance
-            
-        Returns:
-            bool: True if reconfiguration succeeded, False otherwise
-        """
+        """Support field selection reconfiguration via 'weectl extension reconfigure OpenWeather'."""
         print("\n" + "="*80)
         print("WEEWX OPENWEATHER EXTENSION RECONFIGURATION")
         print("="*80)
@@ -973,7 +1018,6 @@ class OpenWeatherInstaller(ExtensionInstaller):
         print("-" * 80)
         
         try:
-            # Load current field selection
             current_selection = self._load_field_selection()
             
             if current_selection:
@@ -989,68 +1033,23 @@ class OpenWeatherInstaller(ExtensionInstaller):
             print(f"\nYou can now select new field configuration.")
             print(f"Note: This will ADD new fields but won't remove existing ones.")
             
-            # Run interactive field selection
+            # UPDATED: Use merged configurator methods instead of FieldSelectionHelper
             configurator = OpenWeatherConfigurator(engine.config_dict)
             configuration_result = configurator.run_interactive_setup()
             
-            if not isinstance(configuration_result, dict):
-                print(f"\n❌ Configuration failed - invalid result format")
+            if configuration_result == 'true':
+                print("\n✓ Reconfiguration completed successfully!")
+                print("Restart WeeWX to use the new field selection:")
+                print("  sudo systemctl restart weewx")
+                return True
+            else:
+                print("\n❌ Reconfiguration was cancelled or failed.")
                 return False
-            
-            new_selected_fields = configuration_result.get('selected_fields', {})
-            if not new_selected_fields:
-                print(f"\n❌ Configuration failed - no field selection received")
-                return False
-            
-            # Save new field selection
-            self._save_field_selection(new_selected_fields)
-            
-            # Update database schema with new fields
-            print(f"\nUpdating database schema for new field selection...")
-            
-            # Get field mappings for new selection
-            field_helper = FieldSelectionHelper('/usr/share/weewx')  # Extension dir
-            field_mappings = field_helper.get_database_field_mappings(new_selected_fields)
-            
-            if field_mappings:
-                # Create database manager and add any missing fields
-                db_manager = DatabaseManager(engine.config_dict)
-                existing_fields, missing_fields = db_manager.check_database_fields(field_mappings.keys())
                 
-                if missing_fields:
-                    print(f"  Found {len(missing_fields)} new fields to add...")
-                    created_count = db_manager._add_missing_fields(missing_fields, field_mappings)
-                    print(f"  ✓ Added {created_count} new database fields")
-                else:
-                    print(f"  ✓ No new database fields needed")
-            
-            # Update operational configuration if needed
-            api_settings = configuration_result.get('api_settings', {})
-            if api_settings:
-                print(f"\nUpdating operational configuration...")
-                self._write_service_config(engine.config_dict, api_settings)
-                print(f"  ✓ Operational settings updated")
-            
-            print(f"\n" + "="*80)
-            print("RECONFIGURATION COMPLETED SUCCESSFULLY!")
-            print("="*80)
-            print("Changes made:")
-            print("✓ Field selection updated and saved")
-            print("✓ Database schema updated with new fields")
-            print("✓ Existing data preserved")
-            print()
-            print("Next steps:")
-            print("1. Restart WeeWX to use new configuration:")
-            print("   sudo systemctl restart weewx")
-            print("2. Monitor logs to verify operation:")
-            print("   sudo journalctl -u weewx -f")
-            print("="*80)
-            
-            return True
-            
         except Exception as e:
             print(f"\n❌ Reconfiguration failed: {e}")
-            print(f"The extension will continue to work with previous settings.")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _write_service_config(self, config_dict, api_settings):
