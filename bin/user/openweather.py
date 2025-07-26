@@ -12,16 +12,16 @@ import json
 import configobj
 import time
 import threading
-import queue
+# import queue
 import urllib.request
 import urllib.parse
 import urllib.error
 import socket
 import yaml
 import os
-import argparse
-import sys
-from typing import Dict, List, Optional, Any, Tuple
+# import argparse
+# import sys
+# from typing import Dict, List, Optional, Any, Tuple
 
 import weewx
 from weewx.engine import StdService
