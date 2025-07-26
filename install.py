@@ -558,16 +558,27 @@ class OpenWeatherConfigurator:
         # Create UI object for terminal interactions
         self.ui = TerminalUI()
         
-        # Load API configuration and field definitions
+        # Get extension directory for YAML loading
+        extension_dir = os.path.dirname(__file__)
+        
+        # Load API configuration and field definitions - NO FALLBACKS!
         try:
-            self.api_config = self._load_api_config()
+            self.api_config = self._load_api_config(extension_dir)
             self.field_definitions = self._create_flat_field_definitions()
+            
+            if not self.field_definitions:
+                raise Exception("No field definitions found in YAML - check openweather_fields.yaml structure")
+                
             print(f"✓ Loaded {len(self.field_definitions)} field definitions from YAML")
+            
         except Exception as e:
-            print(f"Warning: Could not load field definitions from YAML: {e}")
-            print("Using fallback field definitions...")
-            self.api_config = {}
-            self.field_definitions = self._get_fallback_field_definitions()
+            print(f"\n❌ CRITICAL ERROR: Could not load field definitions from YAML")
+            print(f"Error: {e}")
+            print(f"\nThis extension requires a valid openweather_fields.yaml file.")
+            print(f"Check that the file exists in the extension directory and has the correct structure:")
+            print(f"  {extension_dir}/openweather_fields.yaml")
+            print(f"\nInstallation cannot proceed without valid field definitions.")
+            sys.exit(1)
 
     def _load_api_config(self, extension_dir):
         """Load API-first configuration from YAML."""
@@ -580,13 +591,38 @@ class OpenWeatherConfigurator:
             return {'api_modules': {}, 'complexity_definitions': {}}
 
     def _create_flat_field_definitions(self):
-        """Create flat field_definitions for compatibility with existing methods."""
+        """Create flat field_definitions from YAML api_modules structure - NO HARDCODING!"""
         flat_definitions = {}
-        for module_name, module_config in self.api_config.get('api_modules', {}).items():
-            for field_name, field_config in module_config.get('fields', {}).items():
+        
+        # Ensure we have valid api_config
+        if not self.api_config:
+            raise Exception("No API configuration loaded")
+        
+        if 'api_modules' not in self.api_config:
+            raise Exception("YAML missing 'api_modules' section")
+        
+        # Extract all fields from all API modules
+        for module_name, module_config in self.api_config['api_modules'].items():
+            if 'fields' not in module_config:
+                print(f"Warning: Module '{module_name}' has no fields section")
+                continue
+                
+            for field_name, field_config in module_config['fields'].items():
+                # Validate required field properties
+                required_props = ['display_name', 'database_field', 'database_type']
+                missing_props = [prop for prop in required_props if prop not in field_config]
+                
+                if missing_props:
+                    print(f"Warning: Field '{field_name}' missing required properties: {missing_props}")
+                    continue
+                    
                 flat_definitions[field_name] = field_config
+        
+        if not flat_definitions:
+            raise Exception("No valid field definitions found in YAML api_modules")
+        
         return flat_definitions
-    
+
     def _load_field_definitions(self, extension_dir):
         """Load field definitions from YAML file."""
         try:
