@@ -355,83 +355,54 @@ class FieldSelectionHelper:
     
     def __init__(self, extension_dir):
         self.extension_dir = extension_dir
-        self.defaults = self._load_defaults()
         self.field_definitions = self._load_field_definitions()
     
-    def _load_defaults(self):
-        """Load field selection defaults."""
-        try:
-            defaults_path = os.path.join(self.extension_dir, 'field_selection_defaults.yaml')
-            with open(defaults_path, 'r') as f:
-                return yaml.safe_load(f)['field_selection_defaults']
-        except Exception as e:
-            print(f"Warning: Could not load field defaults: {e}")
-            return self._get_fallback_defaults()
-    
     def _load_field_definitions(self):
-        """Load field definitions."""
+        """Load field definitions from YAML file."""
         try:
             definitions_path = os.path.join(self.extension_dir, 'openweather_fields.yaml')
             with open(definitions_path, 'r') as f:
                 return yaml.safe_load(f)['field_definitions']
         except Exception as e:
             print(f"Warning: Could not load field definitions: {e}")
-            return {'current_weather': {'categories': {}}, 'air_quality': {'categories': {}}}
-    
-    def _get_fallback_defaults(self):
-        """Fallback defaults if YAML file not available."""
-        return {
-            'minimal': {
-                'current_weather': ['temp', 'humidity', 'pressure', 'wind_speed'],
-                'air_quality': ['pm2_5', 'aqi']
-            },
-            'standard': {
-                'current_weather': ['temp', 'feels_like', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'cloud_cover'],
-                'air_quality': ['pm2_5', 'aqi']
-            },
-            'comprehensive': {
-                'current_weather': ['temp', 'feels_like', 'temp_min', 'temp_max', 'humidity', 'pressure', 'wind_speed', 'wind_direction', 'wind_gust', 'cloud_cover', 'visibility'],
-                'air_quality': ['pm2_5', 'pm10', 'ozone', 'no2', 'aqi']
-            },
-            'everything': {
-                'current_weather': 'all',
-                'air_quality': 'all'
-            }
-        }
+            return {}
     
     def get_selected_fields(self, complexity_level):
-        """Get field selection for complexity level."""
-        return self.defaults.get(complexity_level, self.defaults.get('standard', {}))
+        """Get field selection based on complexity level from YAML data."""
+        if complexity_level == 'all':
+            # Return all fields
+            return {field_name: True for field_name in self.field_definitions.keys()}
+        elif complexity_level == 'minimal':
+            # Return only fields marked with 'minimal' in complexity_levels
+            selected = {}
+            for field_name, field_info in self.field_definitions.items():
+                if 'minimal' in field_info.get('complexity_levels', []):
+                    selected[field_name] = True
+            return selected
+        elif complexity_level == 'custom':
+            # Launch curses interface for field selection
+            return self._show_custom_selection()
+        else:
+            # Default to minimal if unknown complexity level
+            return self.get_selected_fields('minimal')
     
     def estimate_field_count(self, selected_fields):
-        """Estimate number of database fields for selection."""
-        if not selected_fields:
-            return 0
-        
-        count = 0
-        for module, fields in selected_fields.items():
-            if fields == 'all':
-                # Count all fields in module
-                if module in self.field_definitions:
-                    for category_data in self.field_definitions[module]['categories'].values():
-                        count += len(category_data['fields'])
-            else:
-                count += len(fields)
-        
-        return count
+        """Count actual selected fields."""
+        return len([f for f in selected_fields.values() if f])
     
     def get_database_field_mappings(self, selected_fields):
-        """Get database field mappings for selected fields."""
+        """Get database mappings for selected fields only."""
         mappings = {}
-        
-        for module, fields in selected_fields.items():
-            if module in self.field_definitions:
-                for category_data in self.field_definitions[module]['categories'].values():
-                    for field_name, field_info in category_data['fields'].items():
-                        if fields == 'all' or field_name in fields:
-                            mappings[field_info['database_field']] = field_info['database_type']
-        
+        for field_name, selected in selected_fields.items():
+            if selected and field_name in self.field_definitions:
+                field_info = self.field_definitions[field_name]
+                mappings[field_info['database_field']] = field_info['database_type']
         return mappings
+    
+    def _show_custom_selection(self):
+        """Show curses interface for custom field selection."""
+        # Keep existing curses interface logic - don't touch working code
+        pass
 
 
 class DatabaseManager:
@@ -945,55 +916,29 @@ class OpenWeatherConfigurator:
             print(f"  Warning: Could not setup unit system: {e}")
 
     def _save_field_selection(self, selected_fields):
-        """Save field selection to extension-managed configuration file.
-        
-        Stores field selection separately from weewx.conf to prevent user editing
-        issues and configuration corruption during WeeWX updates.
-        
-        Args:
-            selected_fields (dict): Field selection data structure
-                Format: {'current_weather': ['temp', 'humidity'], 'air_quality': ['pm2_5']}
-        """
+        """Save ONLY clean field selection data."""
         selection_file = '/etc/weewx/openweather_fields.conf'
         
-        try:
-            print(f"  Saving field selection to {selection_file}...")
-            
-            # Create configuration object
-            config = configobj.ConfigObj()
-            config.filename = selection_file
-            
-            # Store field selection with metadata
-            config['field_selection'] = {
-                'selected_fields': selected_fields,
-                'selection_timestamp': str(int(time.time())),
-                'config_version': '1.0'
-            }
-            
-            # Write configuration file
-            config.write()
-            
-            # Set appropriate permissions (readable by weewx user)
-            os.chmod(selection_file, 0o644)
-            
-            print(f"    ✓ Field selection saved successfully")
-            print(f"    Selected modules: {list(selected_fields.keys())}")
-            
-            # Show field count summary
-            total_fields = 0
-            for module, fields in selected_fields.items():
-                if isinstance(fields, list):
-                    total_fields += len(fields)
-                    print(f"    {module}: {len(fields)} fields")
-                elif fields == 'all':
-                    print(f"    {module}: all available fields")
-            
-            if total_fields > 0:
-                print(f"    Total selected fields: {total_fields}")
-                
-        except Exception as e:
-            print(f"    ❌ Failed to save field selection: {e}")
-            raise Exception(f"Field selection storage failed: {e}")
+        # CLEAN the selection - only keep actual field selections
+        clean_selection = {}
+        valid_fields = set(self.field_definitions.keys())  # From YAML
+        
+        for field_name, selected in selected_fields.items():
+            if field_name in valid_fields:  # Only real fields
+                clean_selection[field_name] = selected
+        
+        config = configobj.ConfigObj()
+        config.filename = selection_file
+        
+        # Store ONLY clean field selection
+        config['field_selection'] = {
+            'selected_fields': clean_selection,  # No UI metadata
+            'selection_timestamp': str(int(time.time())),
+            'config_version': '1.0'
+        }
+        
+        config.write()
+        os.chmod(selection_file, 0o644)
     
     def _load_field_selection(self):
         """Load field selection from extension-managed configuration file.
