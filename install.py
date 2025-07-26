@@ -35,30 +35,15 @@ class TerminalUI:
         self.selected_items = set()
     
     def show_complexity_menu(self):
-        """Show complexity level selection menu with field descriptions."""
+        """Show NEW 3-option complexity level selection menu."""
         print("\n" + "="*80)
         print("OPENWEATHER DATA COLLECTION LEVEL")
         print("="*80)
         
-        # Load defaults to show field lists
-        try:
-            defaults_path = os.path.join(os.path.dirname(__file__), 'field_selection_defaults.yaml')
-            with open(defaults_path, 'r') as f:
-                defaults = yaml.safe_load(f)['field_selection_defaults']
-        except:
-            # Fallback if YAML not available
-            defaults = {
-                'minimal': {'field_list': 'Temperature, humidity, pressure, wind speed, PM2.5, AQI'},
-                'standard': {'field_list': 'Temperature, feels-like, humidity, pressure, wind speed & direction, cloud cover, PM2.5, AQI'},
-                'comprehensive': {'field_list': 'All standard fields plus: visibility, wind gusts, daily min/max temp, PM10, ozone, NO2'},
-                'everything': {'field_list': 'All 20+ fields including rain/snow data, atmospheric details, weather descriptions, and all air quality gases'}
-            }
-        
+        # NEW: Only 3 options as per work plan
         options = [
-            ("Minimal", defaults.get('minimal', {}).get('field_list', '4 essential fields')),
-            ("Standard", defaults.get('standard', {}).get('field_list', '8 most common fields')),
-            ("Comprehensive", defaults.get('comprehensive', {}).get('field_list', '15 advanced fields')),
-            ("Everything", defaults.get('everything', {}).get('field_list', 'All available fields')),
+            ("Minimal", "13 essential fields for Extension 3 health predictions"),
+            ("All", "27 fields - everything available from free OpenWeather APIs"),
             ("Custom", "Choose specific fields manually")
         ]
         
@@ -72,20 +57,20 @@ class TerminalUI:
         
         while True:
             try:
-                choice = input("Enter choice [1-5]: ").strip()
-                if choice in ['1', '2', '3', '4', '5']:
-                    complexity_levels = ['minimal', 'standard', 'comprehensive', 'everything', 'custom']
+                choice = input("Enter choice [1-3]: ").strip()
+                if choice in ['1', '2', '3']:
+                    complexity_levels = ['minimal', 'all', 'custom']
                     selected = complexity_levels[int(choice) - 1]
                     print(f"\n✓ Selected: {options[int(choice) - 1][0]}")
                     return selected
                 else:
-                    print("Invalid choice. Please enter 1, 2, 3, 4, or 5.")
+                    print("Invalid choice. Please enter 1, 2, or 3.")
             except (KeyboardInterrupt, EOFError):
                 print("\nInstallation cancelled by user.")
                 sys.exit(1)
     
     def show_custom_selection(self, field_definitions):
-        """Show single-screen checklist for custom field selection using curses."""
+        """Show flat field selection interface for new YAML structure."""
         import curses
         
         def curses_main(stdscr):
@@ -97,52 +82,23 @@ class TerminalUI:
                 curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)  # Highlight
                 curses.init_pair(2, curses.COLOR_GREEN, -1)  # Selected
                 curses.init_pair(3, curses.COLOR_BLUE, -1)   # Header
-                curses.init_pair(4, curses.COLOR_CYAN, -1)   # Module headers
             
-            # Organize all fields into a single list
+            # Build field list directly from YAML - no hardcoded categorization
             all_fields = []
-            field_to_module = {}
-            
-            for module_name, module_data in field_definitions.items():
-                module_display = module_name.upper().replace('_', ' ')
-                
-                # Add module header
+            for field_name, field_info in field_definitions.items():
                 all_fields.append({
-                    'type': 'module_header',
-                    'display': f"=== {module_display} ===",
-                    'module': module_name
+                    'type': 'field',
+                    'name': field_name,
+                    'display': field_info['display_name'],
+                    'selected': False
                 })
-                
-                current_category = ""
-                for category_name, category_data in module_data['categories'].items():
-                    for field_name, field_info in category_data['fields'].items():
-                        # Add category header if new
-                        if category_data['display_name'] != current_category:
-                            current_category = category_data['display_name']
-                            all_fields.append({
-                                'type': 'category_header',
-                                'display': current_category,
-                                'module': module_name
-                            })
-                        
-                        # Add field
-                        field_item = {
-                            'type': 'field',
-                            'name': field_name,
-                            'display': field_info['display_name'],
-                            'module': module_name,
-                            'selected': 'false'  # String instead of boolean
-                        }
-                        all_fields.append(field_item)
-                        field_to_module[len(all_fields) - 1] = module_name
+            
+            # Sort alphabetically by display name for consistent presentation
+            all_fields.sort(key=lambda x: x['display'])
             
             # State variables
             current_item = 0
             scroll_offset = 0
-            
-            # Find first selectable field
-            while current_item < len(all_fields) and all_fields[current_item]['type'] != 'field':
-                current_item += 1
             
             def draw_interface():
                 stdscr.clear()
@@ -168,118 +124,55 @@ class TerminalUI:
                     scroll_offset = current_item - visible_height + 1
                 
                 # Display fields
-                y_pos = 3
-                for i in range(scroll_offset, min(len(all_fields), scroll_offset + visible_height)):
-                    if y_pos >= height - 3:
+                for i in range(scroll_offset, min(scroll_offset + visible_height, len(all_fields))):
+                    field = all_fields[i]
+                    y_pos = 3 + (i - scroll_offset)
+                    
+                    if y_pos >= height - 3:  # Don't overwrite summary area
                         break
                     
-                    item = all_fields[i]
+                    # Field item
+                    selected_mark = "[X]" if field['selected'] else "[ ]"
                     
-                    if item['type'] == 'module_header':
-                        # Module header
-                        stdscr.addstr(y_pos, 0, item['display'], curses.color_pair(4) | curses.A_BOLD)
+                    # Highlight current item
+                    attr = 0
+                    if i == current_item:
+                        attr = curses.color_pair(1) | curses.A_BOLD
+                    elif field['selected']:
+                        attr = curses.color_pair(2)
                     
-                    elif item['type'] == 'category_header':
-                        # Category header
-                        stdscr.addstr(y_pos, 2, f"{item['display']}:", curses.color_pair(3))
-                    
-                    elif item['type'] == 'field':
-                        # Field item
-                        cursor = "→ " if i == current_item else "  "
-                        checkbox = "[✓] " if item['selected'] == 'true' else "[ ] "  # Check string value
-                        text = f"{cursor}{checkbox}{item['display']}"
-                        
-                        # Truncate if too long
-                        if len(text) > width - 4:
-                            text = text[:width - 7] + "..."
-                        
-                        # Apply highlighting and colors
-                        attr = 0
-                        if i == current_item:
-                            attr |= curses.color_pair(1) | curses.A_REVERSE
-                        if item['selected'] == 'true':  # Check string value
-                            attr |= curses.color_pair(2)
-                        
-                        stdscr.addstr(y_pos, 4, text, attr)
-                    
-                    y_pos += 1
+                    line = f"  {selected_mark} {field['display']}"
+                    stdscr.addstr(y_pos, 0, line[:width-1], attr)
                 
                 # Summary at bottom
-                if height > 10:
-                    summary_y = height - 3
-                    stdscr.addstr(summary_y, 0, "─" * width)
-                    
-                    # Count selected fields by module
-                    selected_counts = {}
-                    total_selected = 0
-                    
-                    for item in all_fields:
-                        if item['type'] == 'field':
-                            module = item['module']
-                            if module not in selected_counts:
-                                selected_counts[module] = 0
-                            if item['selected'] == 'true':  # Check string value
-                                selected_counts[module] += 1
-                                total_selected += 1
-                    
-                    summary_text = f"Selected: {total_selected} total"
-                    for module, count in selected_counts.items():
-                        module_display = module.replace('_', ' ').title()
-                        summary_text += f" | {module_display}: {count}"
-                    
-                    if len(summary_text) < width:
-                        stdscr.addstr(summary_y + 1, 0, summary_text)
-                    
-                    # Scroll indicator
-                    if len(all_fields) > visible_height:
-                        scroll_info = f"Line {current_item + 1} of {len(all_fields)}"
-                        stdscr.addstr(summary_y + 2, width - len(scroll_info) - 1, scroll_info)
+                selected_count = sum(1 for f in all_fields if f['selected'])
+                total_fields = len(all_fields)
+                summary = f"Selected: {selected_count}/{total_fields} fields"
+                stdscr.addstr(height-2, (width - len(summary)) // 2, summary, curses.color_pair(3))
                 
                 stdscr.refresh()
             
             # Main interaction loop
             while True:
-                try:
-                    draw_interface()
-                    key = stdscr.getch()
-                    
-                    if key == ord('q') or key == ord('Q'):
-                        return None  # User cancelled
-                    elif key == 10 or key == 13:  # ENTER
-                        break
-                    elif key == curses.KEY_UP:
-                        # Move to previous selectable item
-                        new_pos = current_item - 1
-                        while new_pos >= 0 and all_fields[new_pos]['type'] != 'field':
-                            new_pos -= 1
-                        if new_pos >= 0:
-                            current_item = new_pos
-                    elif key == curses.KEY_DOWN:
-                        # Move to next selectable item
-                        new_pos = current_item + 1
-                        while new_pos < len(all_fields) and all_fields[new_pos]['type'] != 'field':
-                            new_pos += 1
-                        if new_pos < len(all_fields):
-                            current_item = new_pos
-                    elif key == 32:  # SPACE
-                        if (current_item < len(all_fields) and 
-                            all_fields[current_item]['type'] == 'field'):
-                            # Toggle between 'true' and 'false' strings
-                            current_selection = all_fields[current_item]['selected']
-                            all_fields[current_item]['selected'] = 'false' if current_selection == 'true' else 'true'
-                        
-                except KeyboardInterrupt:
+                draw_interface()
+                key = stdscr.getch()
+                
+                if key == ord('q') or key == 27:  # ESC or 'q'
                     return None
-            
-            # Convert to expected format
-            selected_fields = {'current_weather': [], 'air_quality': []}
-            for item in all_fields:
-                if item['type'] == 'field' and item['selected'] == 'true':  # Check string value
-                    selected_fields[item['module']].append(item['name'])
-            
-            return selected_fields
+                elif key == curses.KEY_UP and current_item > 0:
+                    current_item -= 1
+                elif key == curses.KEY_DOWN and current_item < len(all_fields) - 1:
+                    current_item += 1
+                elif key == ord(' '):  # Space to toggle selection
+                    all_fields[current_item]['selected'] = not all_fields[current_item]['selected']
+                elif key == ord('\n') or key == curses.KEY_ENTER or key == 10:
+                    # Return flat field selection
+                    result = {}
+                    for field in all_fields:
+                        if field['selected']:
+                            result[field['name']] = True
+                    return result
         
-        # Run curses interface
         try:
             result = curses.wrapper(curses_main)
             
@@ -287,42 +180,35 @@ class TerminalUI:
                 print("\nCustom selection cancelled.")
                 return None
             
-            # Show final summary in regular terminal
-            total_selected = sum(len(fields) for fields in result.values())
+            # Show final summary
+            selected_count = len(result)
             print(f"\n" + "="*60)
-            print(f"SELECTION SUMMARY: {total_selected} fields selected")
+            print(f"SELECTION SUMMARY: {selected_count} fields selected")
             print("="*60)
             
-            for module_name, fields in result.items():
-                module_display = module_name.replace('_', ' ').title()
-                print(f"{module_display}: {len(fields)} fields")
-                
-                if fields:
-                    # Show first few selected field names
-                    field_names = []
-                    for field_name in fields:
-                        # Find display name
-                        for module_data in field_definitions.values():
-                            for category_data in module_data['categories'].values():
-                                if field_name in category_data['fields']:
-                                    field_names.append(category_data['fields'][field_name]['display_name'])
-                                    break
-                    
-                    if field_names:
-                        display_list = ', '.join(field_names[:3])
-                        if len(field_names) > 3:
-                            display_list += f" (and {len(field_names) - 3} more)"
-                        print(f"  {display_list}")
-            
-            if total_selected == 0:
-                print("\nWarning: No fields selected. Using 'standard' defaults instead.")
+            if selected_count == 0:
+                print("Warning: No fields selected. Using 'minimal' defaults instead.")
                 return None
+            
+            # Show selected field names
+            if result:
+                selected_names = []
+                for field_name in result.keys():
+                    if field_name in field_definitions:
+                        selected_names.append(field_definitions[field_name]['display_name'])
+                
+                if selected_names:
+                    print("Selected fields:")
+                    for i, name in enumerate(selected_names[:5]):  # Show first 5
+                        print(f"  - {name}")
+                    if len(selected_names) > 5:
+                        print(f"  ... and {len(selected_names) - 5} more")
             
             return result
             
         except Exception as e:
             print(f"\nError with custom selection interface: {e}")
-            print("Falling back to 'standard' field selection.")
+            print("Falling back to 'minimal' field selection.")
             return None
     
     def confirm_selection(self, complexity_level, field_count_estimate):
@@ -348,6 +234,31 @@ class TerminalUI:
                 return 'false'  # Return string instead of boolean
             else:
                 print("Please enter 'y' for yes or 'n' for no")
+
+    def _save_field_selection(self, selected_fields):
+        """Save ONLY clean field selection data."""
+        selection_file = '/etc/weewx/openweather_fields.conf'
+        
+        # CLEAN the selection - only keep actual field selections
+        clean_selection = {}
+        valid_fields = set(self.field_definitions.keys())
+        
+        for field_name, selected in selected_fields.items():
+            if field_name in valid_fields:
+                clean_selection[field_name] = selected
+        
+        config = configobj.ConfigObj()
+        config.filename = selection_file
+        
+        # Store ONLY clean field selection
+        config['field_selection'] = {
+            'selected_fields': clean_selection,
+            'selection_timestamp': str(int(time.time())),
+            'config_version': '1.0'
+        }
+        
+        config.write()
+        os.chmod(selection_file, 0o644)
 
 
 class FieldSelectionHelper:
