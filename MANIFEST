@@ -1,7 +1,6 @@
 # WeeWX OpenWeather Extension Manifest
 install.py
 bin/user/openweather.py
-field_selection_defaults.yaml
 openweather_fields.yaml
 README.md
 CHANGELOG.md
