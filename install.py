@@ -639,16 +639,19 @@ class OpenWeatherConfigurator:
         return config_dict, selected_fields
       
     def get_selected_fields(self, complexity_level):
-        """Get fields and group by service modules for openweather.py."""
+        """Get fields and return in flat format for database operations."""
         if complexity_level == 'all':
-            return self._group_fields_by_module(self.field_definitions.keys())
+            # Return all fields as flat dict for database mapping
+            return {field_name: True for field_name in self.field_definitions.keys()}
         elif complexity_level == 'minimal':
-            minimal_fields = []
+            # Return only minimal fields as flat dict
+            selected = {}
             for field_name, field_info in self.field_definitions.items():
                 if 'minimal' in field_info.get('complexity_levels', []):
-                    minimal_fields.append(field_name)
-            return self._group_fields_by_module(minimal_fields)
+                    selected[field_name] = True
+            return selected
         elif complexity_level == 'custom':
+            # Custom selection would return flat dict
             return {}
         else:
             return self.get_selected_fields('minimal')
@@ -834,7 +837,7 @@ class OpenWeatherConfigurator:
         return modules
 
     def _write_enhanced_config(self, config_dict, selected_fields, api_key, intervals):
-        """Write enhanced configuration with unit system integration."""
+        """Write configuration in the module-based format that openweather.py expects."""
         service_config = config_dict.setdefault('OpenWeatherService', {})
         
         # Basic service configuration
@@ -867,7 +870,6 @@ class OpenWeatherConfigurator:
         for module_name, field_list in field_groups.items():
             if field_list:  # Only include modules with selected fields
                 modules[module_name] = True
-                modules[f'{module_name}_fields'] = field_list
             else:
                 modules[module_name] = False
         
@@ -875,17 +877,15 @@ class OpenWeatherConfigurator:
         intervals_config = service_config.setdefault('intervals', {})
         intervals_config.update(intervals)
         
-        # Field selection storage (flat format for new architecture)
+        # CRITICAL: Write field selection in MODULE-BASED format for openweather.py
+        # Store grouped fields in the format the service expects: {'current_weather': ['temp', 'humidity']}
         field_selection = service_config.setdefault('field_selection', {})
         field_selection['complexity_level'] = getattr(self, 'complexity_level', 'custom')
         field_selection['selection_timestamp'] = str(int(time.time()))
         field_selection['config_version'] = '1.0'
         
-        # Store selected fields in flat format
-        selected_fields_config = field_selection.setdefault('selected_fields', {})
-        for field_name, selected in selected_fields.items():
-            if selected:
-                selected_fields_config[field_name] = True
+        # Store selected fields in MODULE-BASED format (what openweather.py expects)
+        field_selection['selected_fields'] = field_groups
         
         return config_dict
 
@@ -972,6 +972,41 @@ class OpenWeatherConfigurator:
         
         api_units = mapping.get(weewx_unit_system, 'metric')  # Fallback to metric
         return api_units
+
+    def _group_fields_by_module(self, flat_field_selection):
+        """Convert flat field selection to module-based format for openweather.py.
+        
+        Input: {'ow_temperature': True, 'ow_humidity': True, 'ow_pm25': True}
+        Output: {'current_weather': ['temp', 'humidity'], 'air_quality': ['pm2_5']}
+        """
+        grouped = {}
+        
+        for field_name, selected in flat_field_selection.items():
+            if not selected:
+                continue
+                
+            # Find which API module this field belongs to using YAML data
+            module_name = self._find_module_for_field(field_name)
+            if not module_name:
+                continue
+            
+            # Get the service field name from YAML
+            field_config = self.field_definitions.get(field_name, {})
+            service_field = field_config.get('service_field', field_name.replace('ow_', ''))
+            
+            # Add to module group
+            if module_name not in grouped:
+                grouped[module_name] = []
+            grouped[module_name].append(service_field)
+        
+        return grouped
+
+    def _find_module_for_field(self, field_name):
+        """Find which API module a field belongs to using YAML api_modules structure."""
+        for module_name, module_config in self.api_config.get('api_modules', {}).items():
+            if field_name in module_config.get('fields', {}):
+                return module_name
+        return None
 
 
 class OpenWeatherInstaller(ExtensionInstaller):
