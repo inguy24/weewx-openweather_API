@@ -690,11 +690,8 @@ class OpenWeatherService(StdService):
     def _get_database_field_name(self, module, field, field_manager):
         """Get database field name for a logical field name."""
         try:
-            all_fields = field_manager.get_all_available_fields()
-            if module in all_fields:
-                for category_data in all_fields[module]['categories'].values():
-                    if field in category_data['fields']:
-                        return category_data['fields'][field]['database_field']
+            # Use our new _map_service_to_database_field method
+            return field_manager._map_service_to_database_field(field, module)
         except Exception as e:
             log.error(f"Error looking up database field for {module}.{field}: {e}")
         return None
@@ -702,15 +699,20 @@ class OpenWeatherService(StdService):
     def _get_all_fields_for_module(self, module, field_manager):
         """Get all available fields for a module when 'all' is selected."""
         try:
-            all_fields = field_manager.get_all_available_fields()
-            if module in all_fields:
-                module_fields = []
-                for category_data in all_fields[module]['categories'].values():
-                    module_fields.extend(category_data['fields'].keys())
-                return module_fields
+            # Load from YAML directly
+            with open(field_manager.config_path['definitions'], 'r') as f:
+                api_config = yaml.safe_load(f)
+            
+            module_config = api_config.get('api_modules', {}).get(module, {})
+            fields = []
+            for field_name, field_config in module_config.get('fields', {}).items():
+                service_field = field_config.get('service_field', field_name)
+                fields.append(service_field)
+            
+            return fields
         except Exception as e:
             log.error(f"Error getting all fields for module '{module}': {e}")
-        return []
+            return []
     
     def _validate_forecast_table(self):
         """Validate forecast table if needed - never fails."""
