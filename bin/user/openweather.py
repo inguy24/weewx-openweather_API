@@ -96,37 +96,24 @@ class FieldSelectionManager:
         return mappings
 
     def _map_service_to_database_field(self, service_field, module_name):
-        """Map service field name to database field name."""
-        # Load from YAML if available, otherwise use hardcoded mapping
+        """Map service field name to database field name using YAML data."""
         try:
+            # Load from YAML directly to get the mapping
             with open(self.config_path['definitions'], 'r') as f:
                 api_config = yaml.safe_load(f)
             
+            # Look up the service field in the specified module
             module_config = api_config.get('api_modules', {}).get(module_name, {})
             for field_name, field_config in module_config.get('fields', {}).items():
                 if field_config.get('service_field') == service_field:
                     return field_config.get('database_field')
-        except:
-            pass
-        
-        # Fallback to simple mapping
-        simple_mapping = {
-            'temp': 'ow_temperature',
-            'feels_like': 'ow_feels_like',
-            'humidity': 'ow_humidity', 
-            'pressure': 'ow_pressure',
-            'wind_speed': 'ow_wind_speed',
-            'wind_direction': 'ow_wind_direction',
-            'pm2_5': 'ow_pm25',
-            'pm10': 'ow_pm10',
-            'aqi': 'ow_aqi',
-            'ozone': 'ow_ozone',
-            'no2': 'ow_no2',
-            'so2': 'ow_so2',
-            'co': 'ow_co'
-        }
-        
-        return simple_mapping.get(service_field, f'ow_{service_field}')
+            
+            # If not found, return None
+            return None
+            
+        except Exception as e:
+            log.error(f"Error mapping service field {service_field} in module {module_name}: {e}")
+            return None
 
     def _get_database_type_for_field(self, database_field):
         """Get database type for a field."""
@@ -688,14 +675,111 @@ class OpenWeatherService(StdService):
         return active_fields
     
     def _get_database_field_name(self, module, field, field_manager):
-        """Get database field name for a logical field name."""
+        """Get database field name for a logical field name using YAML data."""
         try:
-            # Use our new _map_service_to_database_field method
+            # Use the updated method from FieldSelectionManager
             return field_manager._map_service_to_database_field(field, module)
+            
         except Exception as e:
             log.error(f"Error looking up database field for {module}.{field}: {e}")
-        return None
-    
+            return None
+     
+    def _setup_unit_system(self):
+        """Set up WeeWX unit system integration and detect unit preferences."""
+        try:
+            import weewx.units
+            
+            # Detect WeeWX unit system from configuration
+            weewx_unit_system = self._detect_weewx_unit_system()
+            
+            # Map to OpenWeather API units parameter
+            self.api_units = self._map_to_openweather_units(weewx_unit_system)
+            
+            log.info(f"Unit system: WeeWX='{weewx_unit_system}' → OpenWeather='{self.api_units}'")
+            
+            # Add concentration unit group for air quality if not exists
+            if 'group_concentration' not in weewx.units.USUnits:
+                weewx.units.USUnits['group_concentration'] = 'microgram_per_meter_cubed'
+                weewx.units.MetricUnits['group_concentration'] = 'microgram_per_meter_cubed'
+                weewx.units.MetricWXUnits['group_concentration'] = 'microgram_per_meter_cubed'
+            
+            # Add unit mappings for all collected fields
+            for module_name, field_list in self.active_fields.items():
+                for service_field in field_list:
+                    # Map service field to database field
+                    db_field = self._get_database_field_name(module_name, service_field, self.field_manager)
+                    if not db_field:
+                        continue
+                    
+                    # Map to appropriate unit groups based on field content
+                    if any(temp_word in db_field.lower() for temp_word in ['temperature', 'temp', 'feels']):
+                        weewx.units.obs_group_dict[db_field] = 'group_temperature'
+                    elif 'humidity' in db_field.lower():
+                        weewx.units.obs_group_dict[db_field] = 'group_percent'
+                    elif 'pressure' in db_field.lower():
+                        weewx.units.obs_group_dict[db_field] = 'group_pressure'
+                    elif 'wind' in db_field.lower():
+                        if any(dir_word in db_field.lower() for dir_word in ['direction', 'deg', 'dir']):
+                            weewx.units.obs_group_dict[db_field] = 'group_direction'
+                        else:
+                            weewx.units.obs_group_dict[db_field] = 'group_speed'
+                    elif any(pollutant in db_field.lower() for pollutant in ['pm25', 'pm10', 'ozone', 'no2', 'so2', 'co']):
+                        weewx.units.obs_group_dict[db_field] = 'group_concentration'
+                    elif 'aqi' in db_field.lower():
+                        weewx.units.obs_group_dict[db_field] = 'group_count'
+                    elif 'visibility' in db_field.lower():
+                        weewx.units.obs_group_dict[db_field] = 'group_distance'
+                    elif 'cloud' in db_field.lower():
+                        weewx.units.obs_group_dict[db_field] = 'group_percent'
+                    elif any(precip_word in db_field.lower() for precip_word in ['rain', 'snow']):
+                        weewx.units.obs_group_dict[db_field] = 'group_rain'
+                    else:
+                        weewx.units.obs_group_dict[db_field] = 'group_count'
+            
+            # Add formatting for concentration
+            if 'microgram_per_meter_cubed' not in weewx.units.default_unit_format_dict:
+                weewx.units.default_unit_format_dict['microgram_per_meter_cubed'] = '%.1f'
+            
+            if 'microgram_per_meter_cubed' not in weewx.units.default_unit_label_dict:
+                weewx.units.default_unit_label_dict['microgram_per_meter_cubed'] = ' μg/m³'
+            
+            log.info("Unit system configured for OpenWeather fields")
+            
+        except Exception as e:
+            log.error(f"Failed to setup unit system: {e}")
+
+    def _detect_weewx_unit_system(self):
+        """Detect WeeWX unit system from configuration."""
+        try:
+            # Look for StdConvert target_unit in configuration
+            stdconvert_config = self.config.get('StdConvert', {})
+            target_unit = stdconvert_config.get('target_unit', 'US').upper()
+            
+            if target_unit in ['US', 'METRICWX', 'METRIC']:
+                return target_unit
+            else:
+                log.warning(f"Unknown WeeWX unit system '{target_unit}', defaulting to US")
+                return 'US'
+                
+        except Exception as e:
+            log.warning(f"Could not detect WeeWX unit system: {e}, defaulting to US")
+            return 'US'
+
+    def _map_to_openweather_units(self, weewx_unit_system):
+        """Map WeeWX unit system to OpenWeather API units parameter."""
+        mapping = {
+            'US': 'imperial',        # F, mph, inHg
+            'METRICWX': 'metric',    # C, m/s, mbar  
+            'METRIC': 'metric'       # C, km/hr -> m/s (needs conversion), mbar
+        }
+        
+        api_units = mapping.get(weewx_unit_system, 'metric')  # Fallback to metric (not Kelvin!)
+        
+        # Store conversion needed flag for METRIC system
+        self.needs_wind_conversion = (weewx_unit_system == 'METRIC')
+        
+        return api_units
+
     def _get_all_fields_for_module(self, module, field_manager):
         """Get all available fields for a module when 'all' is selected."""
         try:
