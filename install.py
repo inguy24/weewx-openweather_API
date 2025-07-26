@@ -944,81 +944,6 @@ class OpenWeatherConfigurator:
         except Exception as e:
             print(f"  Warning: Could not setup unit system: {e}")
 
-
-class OpenWeatherInstaller(ExtensionInstaller):
-    """Main installer - handles WeeWX extension mechanics with proper service registration."""
-    
-    def __init__(self):
-        super(OpenWeatherInstaller, self).__init__(
-            version="1.0.0",
-            name="OpenWeather", 
-            description="OpenWeatherMap API integration with modular field selection",
-            author="WeeWX OpenWeather Extension",
-            author_email="",
-            
-            # FIXED: Use data_services parameter for automatic install/uninstall
-            data_services=['user.openweather.OpenWeatherService'],
-            
-            files=[
-                ('bin/user', ['bin/user/openweather.py']),
-                ('', ['field_selection_defaults.yaml', 'openweather_fields.yaml'])
-            ],
-            config={
-                'OpenWeatherService': {
-                    'enable': 'true',
-                    'api_key': 'REPLACE_WITH_YOUR_API_KEY',
-                    'timeout': '30',
-                    'log_success': 'false',
-                    'log_errors': 'true',
-                    'modules': {
-                        'current_weather': 'true',
-                        'air_quality': 'true'
-                    },
-                    'intervals': {
-                        'current_weather': '3600',
-                        'air_quality': '7200'
-                    },
-                    'field_selection': {
-                        'complexity_level': 'standard'
-                    }
-                }
-                # NO Engine section - handled automatically by data_services parameter
-            }
-        )
-    
-    def configure(self, engine):
-        """Orchestrates installation - delegates to configurator for separation of concerns."""
-        
-        print("\n" + "="*80)
-        print("WEEWX OPENWEATHER EXTENSION INSTALLATION")
-        print("="*80)
-        print("Installing files and registering service...")
-        print("Service registration: Automatic via ExtensionInstaller data_services parameter")
-        print("-" * 80)
-        
-        # Delegate all interactive configuration to separate class
-        configurator = OpenWeatherConfigurator(engine.config_dict)
-        configuration_result = configurator.run_interactive_setup()
-        
-        if configuration_result == 'true':  # Check string value
-            print("\n" + "="*80)
-            print("INSTALLATION COMPLETED SUCCESSFULLY!")
-            print("="*80)
-            print("✓ Files installed")
-            print("✓ Service registered automatically: user.openweather.OpenWeatherService")
-            print("✓ Interactive configuration completed")
-            print("✓ Database schema extended")
-            print("✓ Unit system configured")
-            print("-" * 80)
-            print("IMPORTANT: Restart WeeWX to activate the extension:")
-            print("  sudo systemctl restart weewx")
-            print()
-            print("Check logs for successful operation:")
-            print("  sudo journalctl -u weewx -f")
-            print("="*80)
-        
-        return configuration_result == 'true'  # Convert string to boolean for ExtensionInstaller
-    
     def _save_field_selection(self, selected_fields):
         """Save field selection to extension-managed configuration file.
         
@@ -1116,6 +1041,81 @@ class OpenWeatherInstaller(ExtensionInstaller):
         except Exception as e:
             print(f"    ❌ Failed to load field selection: {e}")
             return {}
+        
+        
+class OpenWeatherInstaller(ExtensionInstaller):
+    """Main installer - handles WeeWX extension mechanics with proper service registration."""
+    
+    def __init__(self):
+        super(OpenWeatherInstaller, self).__init__(
+            version="1.0.0",
+            name="OpenWeather", 
+            description="OpenWeatherMap API integration with modular field selection",
+            author="WeeWX OpenWeather Extension",
+            author_email="",
+            
+            # FIXED: Use data_services parameter for automatic install/uninstall
+            data_services=['user.openweather.OpenWeatherService'],
+            
+            files=[
+                ('bin/user', ['bin/user/openweather.py']),
+                ('', ['field_selection_defaults.yaml', 'openweather_fields.yaml'])
+            ],
+            config={
+                'OpenWeatherService': {
+                    'enable': 'true',
+                    'api_key': 'REPLACE_WITH_YOUR_API_KEY',
+                    'timeout': '30',
+                    'log_success': 'false',
+                    'log_errors': 'true',
+                    'modules': {
+                        'current_weather': 'true',
+                        'air_quality': 'true'
+                    },
+                    'intervals': {
+                        'current_weather': '3600',
+                        'air_quality': '7200'
+                    },
+                    'field_selection': {
+                        'complexity_level': 'standard'
+                    }
+                }
+                # NO Engine section - handled automatically by data_services parameter
+            }
+        )
+    
+    def configure(self, engine):
+        """Orchestrates installation - delegates to configurator for separation of concerns."""
+        
+        print("\n" + "="*80)
+        print("WEEWX OPENWEATHER EXTENSION INSTALLATION")
+        print("="*80)
+        print("Installing files and registering service...")
+        print("Service registration: Automatic via ExtensionInstaller data_services parameter")
+        print("-" * 80)
+        
+        # Delegate all interactive configuration to separate class
+        configurator = OpenWeatherConfigurator(engine.config_dict)
+        configuration_result = configurator.run_interactive_setup()
+        
+        if configuration_result == 'true':  # Check string value
+            print("\n" + "="*80)
+            print("INSTALLATION COMPLETED SUCCESSFULLY!")
+            print("="*80)
+            print("✓ Files installed")
+            print("✓ Service registered automatically: user.openweather.OpenWeatherService")
+            print("✓ Interactive configuration completed")
+            print("✓ Database schema extended")
+            print("✓ Unit system configured")
+            print("-" * 80)
+            print("IMPORTANT: Restart WeeWX to activate the extension:")
+            print("  sudo systemctl restart weewx")
+            print()
+            print("Check logs for successful operation:")
+            print("  sudo journalctl -u weewx -f")
+            print("="*80)
+        
+        return configuration_result == 'true'  # Convert string to boolean for ExtensionInstaller  
     
     def reconfigure(self, engine):
         """Support field selection reconfiguration via 'weectl extension reconfigure OpenWeather'.
