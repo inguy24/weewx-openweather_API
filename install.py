@@ -585,70 +585,59 @@ class OpenWeatherConfigurator:
             print(f"Warning: Could not load field definitions: {e}")
             return {}
     
-    def run_interactive_setup(self):
-        """Handle new grouped field format in the flow."""
-        
+    def run_interactive_setup(self, config_dict):
+        """Enhanced interactive setup with unit system integration."""
         print("\n" + "="*80)
         print("WEEWX OPENWEATHER EXTENSION CONFIGURATION")
         print("="*80)
-        print("This extension collects weather and air quality data from OpenWeatherMap.")
-        print("You'll be guided through API setup and field selection.")
-        print("-" * 80)
+        print("This installer will configure OpenWeatherMap API data collection.")
+        print("The extension will automatically detect your WeeWX unit system and")
+        print("configure OpenWeather API calls accordingly.")
+        print()
         
-        try:
-            api_key = self._prompt_api_key()
-            
-            modules = self._select_modules()
-            
-            ui = TerminalUI()
-            complexity = ui.show_complexity_menu()
-            
-            if complexity == 'custom':
-                selected_fields = self._show_custom_selection_grouped(modules)
-                if not selected_fields:
-                    complexity = 'minimal'
-                    selected_fields = self.get_selected_fields('minimal')
-            else:
-                selected_fields = self.get_selected_fields(complexity)
-            
-            field_count = self.estimate_field_count(selected_fields)
-            confirmation = ui.confirm_selection(complexity, field_count)
-            if confirmation != 'true':
-                print("\nConfiguration cancelled by user.")
-                return 'false'
-            
-            field_mappings = self.get_database_field_mappings(selected_fields)
-            db_manager = DatabaseManager(self.config_dict)
-            created_count = db_manager.create_database_fields(field_mappings)
-            
-            self._write_enhanced_config(api_key, modules, complexity, selected_fields)
-            
-            self._setup_unit_system()
-            
-            print("\n" + "="*80)
-            print("CONFIGURATION COMPLETED SUCCESSFULLY!")
-            print("="*80)
-            print(f"✓ API key configured: {api_key[:8]}...")
-            print(f"✓ Field selection: {complexity} ({field_count} fields)")
-            print(f"✓ Database fields: {created_count} created")
-            print("✓ Service configuration written")
-            print("✓ Unit system configured")
-            print("-" * 80)
-            print("Restart WeeWX to activate the OpenWeather extension:")
-            print("  sudo systemctl restart weewx")
-            print("="*80)
-            
-            return 'true'
-            
-        except KeyboardInterrupt:
-            print("\n\nInstallation cancelled by user.")
-            return 'false'
-        except Exception as e:
-            print(f"\n❌ Configuration failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return 'false'
-         
+        # Detect and display unit system information
+        weewx_unit_system = self._detect_weewx_unit_system()
+        openweather_units = self._map_to_openweather_units(weewx_unit_system)
+        
+        print("UNIT SYSTEM DETECTION")
+        print("-" * 40)
+        print(f"WeeWX unit system: {weewx_unit_system}")
+        print(f"OpenWeather API calls will use: {openweather_units}")
+        
+        if weewx_unit_system == 'US':
+            print("  → Temperature: Fahrenheit, Wind: mph, Pressure: inHg")
+        elif weewx_unit_system == 'METRICWX':
+            print("  → Temperature: Celsius, Wind: m/s, Pressure: mbar")
+        elif weewx_unit_system == 'METRIC':
+            print("  → Temperature: Celsius, Wind: km/hr (converted from m/s), Pressure: mbar")
+        
+        print("\nThis ensures OpenWeather data integrates seamlessly with your WeeWX system.")
+        
+        # Get API key
+        api_key = self._prompt_api_key()
+        
+        # Get data collection level with enhanced field listings
+        complexity_level = self.ui.show_complexity_menu()
+        self.complexity_level = complexity_level  # Store for config writing
+        
+        # Get field selection
+        selected_fields = self.field_helper.get_selected_fields(complexity_level)
+        field_count = self.field_helper.estimate_field_count(selected_fields)
+        
+        # Confirm selection
+        confirmed = self.ui.confirm_selection(complexity_level, field_count)
+        if confirmed == 'false':
+            print("\nInstallation cancelled by user.")
+            sys.exit(1)
+        
+        # Setup intervals
+        intervals = self._setup_intervals()
+        
+        # Write configuration
+        config_dict = self._write_enhanced_config(config_dict, selected_fields, api_key, intervals)
+        
+        return config_dict, selected_fields
+      
     def get_selected_fields(self, complexity_level):
         """Get fields and group by service modules for openweather.py."""
         if complexity_level == 'all':
@@ -844,44 +833,61 @@ class OpenWeatherConfigurator:
         
         return modules
 
-    def _write_enhanced_config(self, api_key, modules, complexity, selected_fields):
-        """Write service config with complete API data from YAML."""
-        config_dict = self.config_dict
+    def _write_enhanced_config(self, config_dict, selected_fields, api_key, intervals):
+        """Write enhanced configuration with unit system integration."""
+        service_config = config_dict.setdefault('OpenWeatherService', {})
         
-        if 'OpenWeatherService' not in config_dict:
-            config_dict['OpenWeatherService'] = {}
+        # Basic service configuration
+        service_config['enable'] = True
+        service_config['api_key'] = api_key
+        service_config['timeout'] = 30
+        service_config['log_success'] = False
+        service_config['log_errors'] = True
         
-        service_config = config_dict['OpenWeatherService']
+        # Unit system detection and integration
+        weewx_unit_system = self._detect_weewx_unit_system()
+        openweather_units = self._map_to_openweather_units(weewx_unit_system)
         
-        service_config['enable'] = 'true'
-        service_config['api_key'] = str(api_key)
-        service_config['timeout'] = '30'
-        service_config['log_success'] = 'false'
-        service_config['log_errors'] = 'true'
+        service_config['unit_system'] = {
+            'weewx_system': weewx_unit_system,
+            'api_units': openweather_units,
+            'wind_conversion_needed': (weewx_unit_system == 'METRIC')
+        }
         
-        if 'modules' not in service_config:
-            service_config['modules'] = {}
+        print(f"Unit system integration: WeeWX '{weewx_unit_system}' → OpenWeather '{openweather_units}'")
+        if weewx_unit_system == 'METRIC':
+            print("  Note: Wind speed conversion (m/s → km/hr) will be applied automatically")
         
-        if 'intervals' not in service_config:
-            service_config['intervals'] = {}
+        # Module configuration - group fields by API source
+        modules = service_config.setdefault('modules', {})
         
-        for module_name, enabled in modules.items():
-            service_config['modules'][module_name] = 'true' if enabled else 'false'
-            
-            if enabled and module_name in self.api_config.get('api_modules', {}):
-                module_config = self.api_config['api_modules'][module_name]
-                interval = module_config.get('recommended_interval', 3600)
-                service_config['intervals'][module_name] = str(interval)
+        # Group selected fields by module for service compatibility
+        field_groups = self._group_fields_by_module(selected_fields)
         
-        if 'field_selection' not in service_config:
-            service_config['field_selection'] = {}
+        for module_name, field_list in field_groups.items():
+            if field_list:  # Only include modules with selected fields
+                modules[module_name] = True
+                modules[f'{module_name}_fields'] = field_list
+            else:
+                modules[module_name] = False
         
-        service_config['field_selection']['complexity_level'] = str(complexity)
+        # Intervals configuration
+        intervals_config = service_config.setdefault('intervals', {})
+        intervals_config.update(intervals)
         
-        if isinstance(selected_fields, dict) and any(isinstance(v, list) for v in selected_fields.values()):
-            for module_name, field_list in selected_fields.items():
-                if field_list:
-                    service_config['field_selection'][module_name] = ','.join(field_list)
+        # Field selection storage (flat format for new architecture)
+        field_selection = service_config.setdefault('field_selection', {})
+        field_selection['complexity_level'] = getattr(self, 'complexity_level', 'custom')
+        field_selection['selection_timestamp'] = str(int(time.time()))
+        field_selection['config_version'] = '1.0'
+        
+        # Store selected fields in flat format
+        selected_fields_config = field_selection.setdefault('selected_fields', {})
+        for field_name, selected in selected_fields.items():
+            if selected:
+                selected_fields_config[field_name] = True
+        
+        return config_dict
 
     def _setup_unit_system(self):
         """Configure WeeWX unit system for OpenWeather fields."""
@@ -933,7 +939,41 @@ class OpenWeatherConfigurator:
             print(f"    ❌ Failed to load field selection: {e}")
             return {}
       
-       
+    def _detect_weewx_unit_system(self):
+        """Detect WeeWX unit system from existing configuration."""
+        try:
+            # Read WeeWX configuration to detect current unit system
+            weewx_config_path = '/etc/weewx/weewx.conf'
+            if not os.path.exists(weewx_config_path):
+                weewx_config_path = os.path.expanduser('~/weewx-data/weewx.conf')
+            
+            if os.path.exists(weewx_config_path):
+                config = configobj.ConfigObj(weewx_config_path)
+                stdconvert_config = config.get('StdConvert', {})
+                target_unit = stdconvert_config.get('target_unit', 'US').upper()
+                
+                if target_unit in ['US', 'METRICWX', 'METRIC']:
+                    return target_unit
+            
+            print("Warning: Could not detect WeeWX unit system, defaulting to US")
+            return 'US'
+            
+        except Exception as e:
+            print(f"Warning: Error detecting WeeWX unit system: {e}, defaulting to US")
+            return 'US'
+
+    def _map_to_openweather_units(self, weewx_unit_system):
+        """Map WeeWX unit system to OpenWeather API units parameter."""
+        mapping = {
+            'US': 'imperial',        # F, mph, inHg → OpenWeather imperial
+            'METRICWX': 'metric',    # C, m/s, mbar → OpenWeather metric (perfect match)
+            'METRIC': 'metric'       # C, km/hr, mbar → OpenWeather metric (wind needs conversion)
+        }
+        
+        api_units = mapping.get(weewx_unit_system, 'metric')  # Fallback to metric
+        return api_units
+
+
 class OpenWeatherInstaller(ExtensionInstaller):
     """Main installer - handles WeeWX extension mechanics with proper service registration."""
     
@@ -1015,43 +1055,27 @@ class OpenWeatherInstaller(ExtensionInstaller):
         print("="*80)
         print("This will allow you to change your field selection settings.")
         print("Existing data will be preserved - only new fields will be added.")
-        print("-" * 80)
+        print()
         
-        try:
-            current_selection = self._load_field_selection()
-            
-            if current_selection:
-                print(f"\nCurrent field selection found:")
-                for module, fields in current_selection.items():
-                    if isinstance(fields, list):
-                        print(f"  {module}: {len(fields)} fields selected")
-                    else:
-                        print(f"  {module}: {fields}")
-            else:
-                print(f"\nNo current field selection found.")
-            
-            print(f"\nYou can now select new field configuration.")
-            print(f"Note: This will ADD new fields but won't remove existing ones.")
-            
-            # UPDATED: Use merged configurator methods instead of FieldSelectionHelper
-            configurator = OpenWeatherConfigurator(engine.config_dict)
-            configuration_result = configurator.run_interactive_setup()
-            
-            if configuration_result == 'true':
-                print("\n✓ Reconfiguration completed successfully!")
-                print("Restart WeeWX to use the new field selection:")
-                print("  sudo systemctl restart weewx")
-                return True
-            else:
-                print("\n❌ Reconfiguration was cancelled or failed.")
-                return False
-                
-        except Exception as e:
-            print(f"\n❌ Reconfiguration failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-    
+        # Create configurator (no longer FieldSelectionHelper)
+        configurator = OpenWeatherConfigurator()
+        
+        # Run interactive setup
+        config_dict, selected_fields = configurator.run_interactive_setup(engine.config_dict)
+        
+        # Get database field mappings
+        field_mappings = configurator.field_helper.get_database_field_mappings(selected_fields)
+        
+        # Create database manager and add any new fields
+        db_manager = DatabaseManager(engine.config_dict)
+        db_manager.create_database_fields(field_mappings)
+        
+        # Update engine configuration
+        engine.config_dict.update(config_dict)
+        
+        print("\n✓ Reconfiguration completed successfully")
+        print("Please restart WeeWX to apply changes: sudo systemctl restart weewx")
+        
     def _write_service_config(self, config_dict, api_settings):
         """Write only operational settings to weewx.conf (no field selection).
         
