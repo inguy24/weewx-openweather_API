@@ -537,7 +537,7 @@ class DatabaseManager:
             
             else:
                 # Use direct SQL for VARCHAR/TEXT types (AirVisual method)
-                print(f"    Using direct SQL (weectl doesn't support {field_type})")
+                # print(f"    Using direct SQL (weectl doesn't support {field_type})")
                 self._add_field_direct_sql(field_name, field_type)
                 created_count += 1
         
