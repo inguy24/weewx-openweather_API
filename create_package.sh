@@ -34,10 +34,6 @@ cp MANIFEST ${PACKAGE_DIR}/ || { echo "Error: MANIFEST not found"; exit 1; }
 echo "  Copying bin/user/openweather.py..."
 cp bin/user/openweather.py ${PACKAGE_DIR}/bin/user/ || { echo "Error: bin/user/openweather.py not found"; exit 1; }
 
-# Configuration files
-echo "  Copying field_selection_defaults.yaml..."
-cp field_selection_defaults.yaml ${PACKAGE_DIR}/ || { echo "Error: field_selection_defaults.yaml not found"; exit 1; }
-
 echo "  Copying openweather_fields.yaml..."
 cp openweather_fields.yaml ${PACKAGE_DIR}/ || { echo "Error: openweather_fields.yaml not found"; exit 1; }
 
