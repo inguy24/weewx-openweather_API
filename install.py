@@ -35,34 +35,128 @@ class TerminalUI:
         self.selected_items = set()
     
     def show_complexity_menu(self):
-        """Show NEW 3-option complexity level selection menu."""
+        """Show complexity level selection menu with dynamic field listings from YAML."""
         print("\n" + "="*80)
         print("OPENWEATHER DATA COLLECTION LEVEL")
         print("="*80)
+        print("Choose which data fields to collect from OpenWeatherMap.")
+        print("Each level includes specific fields as listed below:")
+        print()
         
-        # NEW: Only 3 options as per work plan
-        options = [
-            ("Minimal", "13 essential fields for Extension 3 health predictions"),
-            ("All", "27 fields - everything available from free OpenWeather APIs"),
-            ("Custom", "Choose specific fields manually")
-        ]
+        # Load field definitions dynamically from YAML
+        try:
+            extension_dir = os.path.dirname(__file__)
+            definitions_path = os.path.join(extension_dir, 'openweather_fields.yaml')
+            with open(definitions_path, 'r') as f:
+                field_definitions = yaml.safe_load(f)['field_definitions']
+        except Exception as e:
+            print(f"Warning: Could not load field definitions: {e}")
+            print("Using basic descriptions instead of detailed field lists.")
+            # Fallback to current basic implementation
+            options = [
+                ("Minimal", "Essential fields for Extension 3 health predictions"),
+                ("All", "Everything available from free OpenWeather APIs"),
+                ("Custom", "Choose specific fields manually")
+            ]
+            
+            print("\nChoose data collection level:")
+            print("-" * 40)
+            
+            for i, (name, description) in enumerate(options, 1):
+                print(f"{i}. {name}")
+                print(f"   {description}")
+                print()
+            
+            while True:
+                try:
+                    choice = input("Enter choice [1-3]: ").strip()
+                    if choice in ['1', '2', '3']:
+                        complexity_levels = ['minimal', 'all', 'custom']
+                        selected = complexity_levels[int(choice) - 1]
+                        print(f"\n✓ Selected: {options[int(choice) - 1][0]}")
+                        return selected
+                    else:
+                        print("Invalid choice. Please enter 1, 2, or 3.")
+                except (KeyboardInterrupt, EOFError):
+                    print("\nInstallation cancelled by user.")
+                    sys.exit(1)
         
-        print("\nChoose data collection level:")
-        print("-" * 40)
+        # Extract fields for each complexity level from YAML
+        minimal_fields = []
+        all_fields = []
         
-        for i, (name, description) in enumerate(options, 1):
-            print(f"{i}. {name}")
-            print(f"   Fields: {description}")
-            print()
+        for field_name, field_info in field_definitions.items():
+            display_name = field_info.get('display_name', field_name)
+            complexity_levels = field_info.get('complexity_levels', [])
+            
+            if 'minimal' in complexity_levels:
+                minimal_fields.append(display_name)
+            if 'all' in complexity_levels:
+                all_fields.append(display_name)
         
+        # Sort fields alphabetically for consistent presentation
+        minimal_fields.sort()
+        all_fields.sort()
+        
+        # Helper function to format comma-delimited field lists with nice wrapping
+        def format_field_list(fields, indent="   "):
+            if not fields:
+                return f"{indent}No fields configured"
+            
+            # Join with commas and wrap at reasonable length
+            field_text = ", ".join(fields)
+            
+            # Simple line wrapping at approximately 70 characters
+            lines = []
+            current_line = indent + "Fields: "
+            
+            for field in fields:
+                # Check if adding this field would make line too long
+                test_line = current_line + field + ", "
+                if len(test_line) > 75 and current_line != indent + "Fields: ":
+                    # Start new line
+                    lines.append(current_line.rstrip(", "))
+                    current_line = indent + "       " + field + ", "
+                else:
+                    current_line = test_line
+            
+            # Add the last line
+            if current_line.strip():
+                lines.append(current_line.rstrip(", "))
+            
+            return "\n".join(lines)
+        
+        # Display menu with dynamic field lists
+        print("1. MINIMAL COLLECTION")
+        print(f"   Essential fields for Extension 3 health predictions")
+        print(f"   {len(minimal_fields)} database fields")
+        print(format_field_list(minimal_fields))
+        print()
+        
+        print("2. ALL FIELDS")
+        print(f"   Complete OpenWeatherMap dataset with all available fields")
+        print(f"   {len(all_fields)} database fields")
+        print(format_field_list(all_fields))
+        print()
+        
+        print("3. CUSTOM SELECTION")
+        print(f"   Choose specific fields manually using interactive menu")
+        print(f"   Select from {len(all_fields)} available fields")
+        print()
+        
+        # Get user selection
         while True:
             try:
                 choice = input("Enter choice [1-3]: ").strip()
-                if choice in ['1', '2', '3']:
-                    complexity_levels = ['minimal', 'all', 'custom']
-                    selected = complexity_levels[int(choice) - 1]
-                    print(f"\n✓ Selected: {options[int(choice) - 1][0]}")
-                    return selected
+                if choice == '1':
+                    print(f"\n✓ Selected: Minimal Collection ({len(minimal_fields)} fields)")
+                    return 'minimal'
+                elif choice == '2':
+                    print(f"\n✓ Selected: All Fields ({len(all_fields)} fields)")
+                    return 'all'
+                elif choice == '3':
+                    print(f"\n✓ Selected: Custom Selection")
+                    return 'custom'
                 else:
                     print("Invalid choice. Please enter 1, 2, or 3.")
             except (KeyboardInterrupt, EOFError):
