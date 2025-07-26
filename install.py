@@ -915,7 +915,7 @@ class OpenWeatherInstaller(ExtensionInstaller):
             
             files=[
                 ('bin/user', ['bin/user/openweather.py']),
-                ('', ['field_selection_defaults.yaml', 'openweather_fields.yaml'])
+                ('', ['openweather_fields.yaml'])
             ],
             config={
                 'OpenWeatherService': {
