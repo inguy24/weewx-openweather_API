@@ -9,6 +9,7 @@ Copyright (C) 2025 WeeWX OpenWeather API Extension
 """
 
 import json
+import configobj
 import time
 import threading
 import queue
