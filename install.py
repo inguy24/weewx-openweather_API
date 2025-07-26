@@ -552,10 +552,22 @@ class OpenWeatherConfigurator:
     """Handles all interactive configuration - merged with field selection logic."""
     
     def __init__(self, config_dict):
+        """Initialize configurator with config dict and load field definitions."""
         self.config_dict = config_dict
-        extension_dir = os.path.dirname(__file__)
-        self.api_config = self._load_api_config(extension_dir)
-        self.field_definitions = self._create_flat_field_definitions()
+        
+        # Create UI object for terminal interactions
+        self.ui = TerminalUI()
+        
+        # Load API configuration and field definitions
+        try:
+            self.api_config = self._load_api_config()
+            self.field_definitions = self._create_flat_field_definitions()
+            print(f"✓ Loaded {len(self.field_definitions)} field definitions from YAML")
+        except Exception as e:
+            print(f"Warning: Could not load field definitions from YAML: {e}")
+            print("Using fallback field definitions...")
+            self.api_config = {}
+            self.field_definitions = self._get_fallback_field_definitions()
 
     def _load_api_config(self, extension_dir):
         """Load API-first configuration from YAML."""
