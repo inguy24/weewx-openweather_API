@@ -235,31 +235,6 @@ class TerminalUI:
             else:
                 print("Please enter 'y' for yes or 'n' for no")
 
-    def _save_field_selection(self, selected_fields):
-        """Save ONLY clean field selection data."""
-        selection_file = '/etc/weewx/openweather_fields.conf'
-        
-        # CLEAN the selection - only keep actual field selections
-        clean_selection = {}
-        valid_fields = set(self.field_definitions.keys())
-        
-        for field_name, selected in selected_fields.items():
-            if field_name in valid_fields:
-                clean_selection[field_name] = selected
-        
-        config = configobj.ConfigObj()
-        config.filename = selection_file
-        
-        # Store ONLY clean field selection
-        config['field_selection'] = {
-            'selected_fields': clean_selection,
-            'selection_timestamp': str(int(time.time())),
-            'config_version': '1.0'
-        }
-        
-        config.write()
-        os.chmod(selection_file, 0o644)
-
 
 class FieldSelectionHelper:
     """Helper class for field selection during installation."""
@@ -311,9 +286,34 @@ class FieldSelectionHelper:
         return mappings
     
     def _show_custom_selection(self):
-        """Show curses interface for custom field selection."""
-        # Keep existing curses interface logic - don't touch working code
-        pass
+        """Launch curses interface for flat field selection."""
+        ui = TerminalUI()
+        return ui.show_custom_selection(self.field_definitions)
+    
+    def _save_field_selection(self, selected_fields):
+        """Save ONLY clean field selection data."""
+        selection_file = '/etc/weewx/openweather_fields.conf'
+        
+        # CLEAN the selection - only keep actual field selections
+        clean_selection = {}
+        valid_fields = set(self.field_definitions.keys())
+        
+        for field_name, selected in selected_fields.items():
+            if field_name in valid_fields:
+                clean_selection[field_name] = selected
+        
+        config = configobj.ConfigObj()
+        config.filename = selection_file
+        
+        # Store ONLY clean field selection
+        config['field_selection'] = {
+            'selected_fields': clean_selection,
+            'selection_timestamp': str(int(time.time())),
+            'config_version': '1.0'
+        }
+        
+        config.write()
+        os.chmod(selection_file, 0o644)
 
 
 class DatabaseManager:
