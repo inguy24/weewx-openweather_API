@@ -95,186 +95,67 @@ class OpenWeatherDataCollector:
         # Determine which APIs we need based on selected fields
         self.required_apis = self._determine_required_apis()
         
-        # Base URLs for OpenWeather APIs
+        # Base URLs for FREE OpenWeather APIs only
         self.base_urls = {
             'current_weather': 'http://api.openweathermap.org/data/2.5/weather',
-            'air_quality': 'http://api.openweathermap.org/data/2.5/air_pollution',
-            'one_call': 'http://api.openweathermap.org/data/3.0/onecall'  # For UV data
+            'air_quality': 'http://api.openweathermap.org/data/2.5/air_pollution'
         }
-    
-    def collect_current_weather(self, latitude, longitude):
-        """Collect current weather data with field filtering."""
-        if 'current_weather' not in self.selected_fields:
-            return {}
+
+    def _determine_required_apis(self):
+        """Determine which FREE APIs are needed based on selected fields."""
+        required = set()
         
-        try:
-            params = {
-                'lat': latitude,
-                'lon': longitude,
-                'appid': self.api_key,
-                'units': 'metric'
-            }
+        for field_name, selected in self.selected_fields.items():
+            if not selected or field_name not in self.field_manager.field_definitions:
+                continue
+                
+            api_path = self.field_manager.field_definitions[field_name]['api_path']
             
-            url = f"{self.base_urls['current_weather']}?{urllib.parse.urlencode(params)}"
-            
-            with urllib.request.urlopen(url, timeout=self.timeout) as response:
-                data = json.loads(response.read().decode('utf-8'))
-            
-            # Extract and filter data based on field selection
-            extracted_data = self._extract_weather_data(data)
-            return self._apply_field_selection(extracted_data, 'current_weather')
-            
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                raise OpenWeatherAPIError("Invalid API key")
-            elif e.code == 429:
-                raise OpenWeatherAPIError("API rate limit exceeded")
+            # Determine API source from path (FREE APIs only)
+            if api_path.startswith('main.') or api_path.startswith('weather[') or api_path.startswith('wind.') or api_path.startswith('clouds.'):
+                required.add('current_weather')
+            elif api_path.startswith('list[0].components.') or api_path.startswith('list[0].main.'):
+                required.add('air_quality')
+        
+        return required
+    
+    def collect_all_data(self, latitude, longitude):
+        """Collect data from all required FREE APIs and combine results."""
+        all_data = {}
+        
+        # Current Weather API
+        if 'current_weather' in self.required_apis:
+            try:
+                weather_data = self._collect_current_weather(latitude, longitude)
+                all_data.update(weather_data)
+            except Exception as e:
+                log.error(f"Current weather collection failed: {e}")
+        
+        # Air Quality API  
+        if 'air_quality' in self.required_apis:
+            try:
+                air_data = self._collect_air_quality(latitude, longitude)
+                all_data.update(air_data)
+            except Exception as e:
+                log.error(f"Air quality collection failed: {e}")
+        
+        return all_data
+    
+    def _extract_value_from_path(self, data, path):
+        """Extract value from API response using dot notation path."""
+        parts = path.split('.')
+        current = data
+        
+        for part in parts:
+            if '[' in part and ']' in part:
+                # Handle array access like "list[0]"
+                key = part.split('[')[0]
+                index = int(part.split('[')[1].split(']')[0])
+                current = current[key][index]
             else:
-                raise OpenWeatherAPIError(f"HTTP error {e.code}: {e.reason}")
-        except socket.timeout:
-            raise OpenWeatherAPIError("Request timeout")
-        except Exception as e:
-            raise OpenWeatherAPIError(f"Unexpected error: {e}")
-    
-    def collect_air_quality(self, latitude, longitude):
-        """Collect air quality data with field filtering."""
-        if 'air_quality' not in self.selected_fields:
-            return {}
+                current = current[part]
         
-        try:
-            params = {
-                'lat': latitude,
-                'lon': longitude,
-                'appid': self.api_key
-            }
-            
-            url = f"{self.base_urls['air_quality']}?{urllib.parse.urlencode(params)}"
-            
-            with urllib.request.urlopen(url, timeout=self.timeout) as response:
-                data = json.loads(response.read().decode('utf-8'))
-            
-            # Extract and filter data based on field selection
-            extracted_data = self._extract_air_quality_data(data)
-            return self._apply_field_selection(extracted_data, 'air_quality')
-            
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                raise OpenWeatherAPIError("Invalid API key")
-            elif e.code == 429:
-                raise OpenWeatherAPIError("API rate limit exceeded")
-            else:
-                raise OpenWeatherAPIError(f"HTTP error {e.code}: {e.reason}")
-        except socket.timeout:
-            raise OpenWeatherAPIError("Request timeout")
-        except Exception as e:
-            raise OpenWeatherAPIError(f"Unexpected error: {e}")
-    
-    def _extract_weather_data(self, api_response):
-        """Extract weather data from API response to database fields."""
-        extracted = {}
-        
-        # Temperature data
-        if 'main' in api_response:
-            main = api_response['main']
-            extracted['ow_temperature'] = main.get('temp')
-            extracted['ow_feels_like'] = main.get('feels_like')
-            extracted['ow_temp_min'] = main.get('temp_min')
-            extracted['ow_temp_max'] = main.get('temp_max')
-            extracted['ow_pressure'] = main.get('pressure')
-            extracted['ow_humidity'] = main.get('humidity')
-            extracted['ow_sea_level'] = main.get('sea_level')
-            extracted['ow_grnd_level'] = main.get('grnd_level')
-        
-        # Wind data
-        if 'wind' in api_response:
-            wind = api_response['wind']
-            extracted['ow_wind_speed'] = wind.get('speed')
-            extracted['ow_wind_direction'] = wind.get('deg')
-            extracted['ow_wind_gust'] = wind.get('gust')
-        
-        # Sky conditions
-        if 'clouds' in api_response:
-            extracted['ow_cloud_cover'] = api_response['clouds'].get('all')
-        
-        extracted['ow_visibility'] = api_response.get('visibility')
-        
-        # Precipitation
-        if 'rain' in api_response:
-            rain = api_response['rain']
-            extracted['ow_rain_1h'] = rain.get('1h')
-            extracted['ow_rain_3h'] = rain.get('3h')
-        
-        if 'snow' in api_response:
-            snow = api_response['snow']
-            extracted['ow_snow_1h'] = snow.get('1h')
-            extracted['ow_snow_3h'] = snow.get('3h')
-        
-        # Weather information
-        if 'weather' in api_response and len(api_response['weather']) > 0:
-            weather = api_response['weather'][0]
-            extracted['ow_weather_main'] = weather.get('main')
-            extracted['ow_weather_description'] = weather.get('description')
-            extracted['ow_weather_icon'] = weather.get('icon')
-        
-        # Add timestamp
-        extracted['ow_weather_timestamp'] = time.time()
-        
-        return extracted
-    
-    def _extract_air_quality_data(self, api_response):
-        """Extract air quality data from API response to database fields."""
-        extracted = {}
-        
-        if 'list' in api_response and len(api_response['list']) > 0:
-            data = api_response['list'][0]
-            
-            # Main AQI
-            if 'main' in data:
-                extracted['ow_aqi'] = data['main'].get('aqi')
-            
-            # Components
-            if 'components' in data:
-                components = data['components']
-                extracted['ow_pm25'] = components.get('pm2_5')
-                extracted['ow_pm10'] = components.get('pm10')
-                extracted['ow_ozone'] = components.get('o3')
-                extracted['ow_no2'] = components.get('no2')
-                extracted['ow_so2'] = components.get('so2')
-                extracted['ow_co'] = components.get('co')
-                extracted['ow_nh3'] = components.get('nh3')
-                extracted['ow_no'] = components.get('no')
-        
-        # Add timestamp
-        extracted['ow_air_quality_timestamp'] = time.time()
-        
-        return extracted
-    
-    def _apply_field_selection(self, raw_data, module_name):
-        """Filter collected data based on field selection."""
-        if module_name not in self.selected_fields:
-            return {}
-        
-        selected_fields = self.selected_fields[module_name]
-        if selected_fields == 'all':
-            return raw_data
-        
-        # Get field mappings for this module
-        all_fields = self.field_manager.get_all_available_fields()
-        selected_db_fields = set()
-        
-        if module_name in all_fields:
-            for category_data in all_fields[module_name]['categories'].values():
-                for field_name, field_info in category_data['fields'].items():
-                    if field_name in selected_fields:
-                        selected_db_fields.add(field_info['database_field'])
-        
-        # Filter raw data to only include selected fields
-        filtered_data = {}
-        for db_field, value in raw_data.items():
-            if db_field in selected_db_fields or db_field.endswith('_timestamp'):
-                filtered_data[db_field] = value
-        
-        return filtered_data
+        return current
 
 
 class OpenWeatherBackgroundThread(threading.Thread):
