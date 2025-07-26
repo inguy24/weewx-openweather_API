@@ -1,200 +1,267 @@
-# WeeWX OpenWeather Extension - Redesigned Field Architecture
-# Complete field definitions with data-driven complexity levels
-# Phase 1 Implementation: Flat field organization with complexity assignments
+# WeeWX OpenWeather Extension - API-First Field Architecture
+# Complete reorganization with data-driven module and field definitions
+# Single source of truth for all API configuration
 
-field_definitions:
-  # === TEMPERATURE FIELDS ===
-  ow_temperature:
-    display_name: "Current temperature"
-    database_field: "ow_temperature"
-    database_type: "REAL"
-    api_path: "main.temp"
-    complexity_levels: ["minimal", "all"]  # Essential for health predictions
+api_modules:
+  current_weather:
+    display_name: "Current Weather Data"
+    description: "Real-time weather conditions including temperature, humidity, pressure, wind, and sky conditions"
+    api_url: "http://api.openweathermap.org/data/2.5/weather"
+    recommended_interval: 3600  # 1 hour
+    service_name: "current_weather"  # What openweather.py expects
     
-  ow_feels_like:
-    display_name: "Feels-like temperature"
-    database_field: "ow_feels_like"
-    database_type: "REAL"
-    api_path: "main.feels_like"
-    complexity_levels: ["minimal", "all"]  # Health comfort index
+    fields:
+      ow_temperature:
+        display_name: "Current temperature"
+        database_field: "ow_temperature"
+        database_type: "REAL"
+        api_path: "main.temp"
+        service_field: "temp"  # What service expects in field lists
+        complexity_levels: ["minimal", "all"]
+        
+      ow_feels_like:
+        display_name: "Feels-like temperature"
+        database_field: "ow_feels_like"
+        database_type: "REAL"
+        api_path: "main.feels_like"
+        service_field: "feels_like"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_temp_min:
+        display_name: "Daily minimum temperature"
+        database_field: "ow_temp_min"
+        database_type: "REAL"
+        api_path: "main.temp_min"
+        service_field: "temp_min"
+        complexity_levels: ["all"]  # NOT in minimal
+        
+      ow_temp_max:
+        display_name: "Daily maximum temperature"
+        database_field: "ow_temp_max"
+        database_type: "REAL"
+        api_path: "main.temp_max"
+        service_field: "temp_max"
+        complexity_levels: ["all"]  # NOT in minimal
+        
+      ow_humidity:
+        display_name: "Relative humidity"
+        database_field: "ow_humidity"
+        database_type: "REAL"
+        api_path: "main.humidity"
+        service_field: "humidity"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_pressure:
+        display_name: "Atmospheric pressure"
+        database_field: "ow_pressure"
+        database_type: "REAL"
+        api_path: "main.pressure"
+        service_field: "pressure"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_sea_level:
+        display_name: "Sea level pressure"
+        database_field: "ow_sea_level"
+        database_type: "REAL"
+        api_path: "main.sea_level"
+        service_field: "sea_level"
+        complexity_levels: ["all"]
+        
+      ow_grnd_level:
+        display_name: "Ground level pressure"
+        database_field: "ow_grnd_level"
+        database_type: "REAL"
+        api_path: "main.grnd_level"
+        service_field: "grnd_level"
+        complexity_levels: ["all"]
+        
+      ow_wind_speed:
+        display_name: "Wind speed"
+        database_field: "ow_wind_speed"
+        database_type: "REAL"
+        api_path: "wind.speed"
+        service_field: "wind_speed"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_wind_direction:
+        display_name: "Wind direction"
+        database_field: "ow_wind_direction"
+        database_type: "REAL"
+        api_path: "wind.deg"
+        service_field: "wind_direction"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_wind_gust:
+        display_name: "Wind gusts"
+        database_field: "ow_wind_gust"
+        database_type: "REAL"
+        api_path: "wind.gust"
+        service_field: "wind_gust"
+        complexity_levels: ["all"]
+        
+      ow_cloud_cover:
+        display_name: "Cloud cover"
+        database_field: "ow_cloud_cover"
+        database_type: "REAL"
+        api_path: "clouds.all"
+        service_field: "cloud_cover"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_visibility:
+        display_name: "Visibility"
+        database_field: "ow_visibility"
+        database_type: "REAL"
+        api_path: "visibility"
+        service_field: "visibility"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_rain_1h:
+        display_name: "Rain (last hour)"
+        database_field: "ow_rain_1h"
+        database_type: "REAL"
+        api_path: "rain.1h"
+        service_field: "rain_1h"
+        complexity_levels: ["all"]
+        
+      ow_rain_3h:
+        display_name: "Rain (last 3 hours)"
+        database_field: "ow_rain_3h"
+        database_type: "REAL"
+        api_path: "rain.3h"
+        service_field: "rain_3h"
+        complexity_levels: ["all"]
+        
+      ow_snow_1h:
+        display_name: "Snow (last hour)"
+        database_field: "ow_snow_1h"
+        database_type: "REAL"
+        api_path: "snow.1h"
+        service_field: "snow_1h"
+        complexity_levels: ["all"]
+        
+      ow_snow_3h:
+        display_name: "Snow (last 3 hours)"
+        database_field: "ow_snow_3h"
+        database_type: "REAL"
+        api_path: "snow.3h"
+        service_field: "snow_3h"
+        complexity_levels: ["all"]
+        
+      ow_weather_main:
+        display_name: "Weather category"
+        database_field: "ow_weather_main"
+        database_type: "VARCHAR(20)"
+        api_path: "weather[0].main"
+        service_field: "weather_main"
+        complexity_levels: ["all"]
+        
+      ow_weather_description:
+        display_name: "Weather description"
+        database_field: "ow_weather_description"
+        database_type: "VARCHAR(50)"
+        api_path: "weather[0].description"
+        service_field: "weather_description"
+        complexity_levels: ["all"]
+        
+      ow_weather_icon:
+        display_name: "Weather icon code"
+        database_field: "ow_weather_icon"
+        database_type: "VARCHAR(10)"
+        api_path: "weather[0].icon"
+        service_field: "weather_icon"
+        complexity_levels: ["all"]
+
+  air_quality:
+    display_name: "Air Quality Data"
+    description: "Air pollution monitoring including particulate matter, gases, and Air Quality Index"
+    api_url: "http://api.openweathermap.org/data/2.5/air_pollution"
+    recommended_interval: 7200  # 2 hours  
+    service_name: "air_quality"
     
-  ow_temp_min:
-    display_name: "Daily minimum temperature"
-    database_field: "ow_temp_min"
-    database_type: "REAL"
-    api_path: "main.temp_min"
-    complexity_levels: ["all"]  # NOT in minimal - not essential for Extension 3
+    fields:
+      ow_pm25:
+        display_name: "PM2.5 concentration"
+        database_field: "ow_pm25"
+        database_type: "REAL"
+        api_path: "list[0].components.pm2_5"
+        service_field: "pm2_5"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_pm10:
+        display_name: "PM10 concentration"
+        database_field: "ow_pm10"
+        database_type: "REAL"
+        api_path: "list[0].components.pm10"
+        service_field: "pm10"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_ozone:
+        display_name: "Ozone concentration"
+        database_field: "ow_ozone"
+        database_type: "REAL"
+        api_path: "list[0].components.o3"
+        service_field: "ozone"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_no2:
+        display_name: "NO2 concentration"
+        database_field: "ow_no2"
+        database_type: "REAL"
+        api_path: "list[0].components.no2"
+        service_field: "no2"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_so2:
+        display_name: "SO2 concentration"
+        database_field: "ow_so2"
+        database_type: "REAL"
+        api_path: "list[0].components.so2"
+        service_field: "so2"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_co:
+        display_name: "CO concentration"
+        database_field: "ow_co"
+        database_type: "REAL"
+        api_path: "list[0].components.co"
+        service_field: "co"
+        complexity_levels: ["minimal", "all"]
+        
+      ow_aqi:
+        display_name: "Air Quality Index"
+        database_field: "ow_aqi"
+        database_type: "INTEGER"
+        api_path: "list[0].main.aqi"
+        service_field: "aqi"
+        complexity_levels: ["minimal", "all"]
+
+# Future APIs can be easily added by adding new sections above
+# Example for future expansion:
+#
+# uv_index:
+#   display_name: "UV Index Data"
+#   description: "UV radiation levels and solar exposure"
+#   api_url: "http://api.openweathermap.org/data/2.5/uvi"
+#   recommended_interval: 3600
+#   service_name: "uv_index"
+#   fields:
+#     ow_uv_current:
+#       display_name: "Current UV index"
+#       database_field: "ow_uv_current"
+#       database_type: "REAL"
+#       api_path: "value"
+#       service_field: "uv_current"
+#       complexity_levels: ["minimal", "all"]
+
+# Complexity level definitions for reference
+complexity_definitions:
+  minimal:
+    description: "Essential fields for Extension 3 health predictions"
+    target_field_count: 15
     
-  ow_temp_max:
-    display_name: "Daily maximum temperature"
-    database_field: "ow_temp_max"
-    database_type: "REAL"
-    api_path: "main.temp_max"
-    complexity_levels: ["all"]  # NOT in minimal - not essential for Extension 3
+  all:
+    description: "All available OpenWeather fields"
+    target_field_count: 27
     
-  # === ATMOSPHERIC FIELDS ===
-  ow_humidity:
-    display_name: "Relative humidity"
-    database_field: "ow_humidity"
-    database_type: "REAL"
-    api_path: "main.humidity"
-    complexity_levels: ["minimal", "all"]  # Critical for health
-    
-  ow_pressure:
-    display_name: "Atmospheric pressure"
-    database_field: "ow_pressure"
-    database_type: "REAL"
-    api_path: "main.pressure"
-    complexity_levels: ["minimal", "all"]  # Health impact
-    
-  ow_sea_level:
-    display_name: "Sea level pressure"
-    database_field: "ow_sea_level"
-    database_type: "REAL"
-    api_path: "main.sea_level"
-    complexity_levels: ["all"]  # Not essential for minimal
-    
-  ow_grnd_level:
-    display_name: "Ground level pressure"
-    database_field: "ow_grnd_level"
-    database_type: "REAL"
-    api_path: "main.grnd_level"
-    complexity_levels: ["all"]  # Not essential for minimal
-    
-  # === WIND FIELDS ===
-  ow_wind_speed:
-    display_name: "Wind speed"
-    database_field: "ow_wind_speed"
-    database_type: "REAL"
-    api_path: "wind.speed"
-    complexity_levels: ["minimal", "all"]  # Health comfort factor
-    
-  ow_wind_direction:
-    display_name: "Wind direction"
-    database_field: "ow_wind_direction"
-    database_type: "REAL"
-    api_path: "wind.deg"
-    complexity_levels: ["minimal", "all"]  # Pollution dispersal
-    
-  ow_wind_gust:
-    display_name: "Wind gusts"
-    database_field: "ow_wind_gust"
-    database_type: "REAL"
-    api_path: "wind.gust"
-    complexity_levels: ["all"]  # Not essential for minimal
-    
-  # === SKY CONDITIONS ===
-  ow_cloud_cover:
-    display_name: "Cloud cover"
-    database_field: "ow_cloud_cover"
-    database_type: "REAL"
-    api_path: "clouds.all"
-    complexity_levels: ["minimal", "all"]  # UV exposure factor
-    
-  ow_visibility:
-    display_name: "Visibility"
-    database_field: "ow_visibility"
-    database_type: "REAL"
-    api_path: "visibility"
-    complexity_levels: ["minimal", "all"]  # Air quality indicator
-    
-  # === PRECIPITATION FIELDS ===
-  ow_rain_1h:
-    display_name: "Rain (last hour)"
-    database_field: "ow_rain_1h"
-    database_type: "REAL"
-    api_path: "rain.1h"
-    complexity_levels: ["all"]  # Not essential for minimal
-    
-  ow_rain_3h:
-    display_name: "Rain (last 3 hours)"
-    database_field: "ow_rain_3h"
-    database_type: "REAL"
-    api_path: "rain.3h"
-    complexity_levels: ["all"]  # Not essential for minimal
-    
-  ow_snow_1h:
-    display_name: "Snow (last hour)"
-    database_field: "ow_snow_1h"
-    database_type: "REAL"
-    api_path: "snow.1h"
-    complexity_levels: ["all"]  # Not essential for minimal
-    
-  ow_snow_3h:
-    display_name: "Snow (last 3 hours)"
-    database_field: "ow_snow_3h"
-    database_type: "REAL"
-    api_path: "snow.3h"
-    complexity_levels: ["all"]  # Not essential for minimal
-    
-  # === WEATHER INFO (VARCHAR FIELDS) ===
-  ow_weather_main:
-    display_name: "Weather category"
-    database_field: "ow_weather_main"
-    database_type: "VARCHAR(20)"
-    api_path: "weather[0].main"
-    complexity_levels: ["all"]  # NOT in minimal - descriptive only
-    
-  ow_weather_description:
-    display_name: "Weather description"
-    database_field: "ow_weather_description"
-    database_type: "VARCHAR(50)"
-    api_path: "weather[0].description"
-    complexity_levels: ["all"]  # NOT in minimal - descriptive only
-    
-  ow_weather_icon:
-    display_name: "Weather icon code"
-    database_field: "ow_weather_icon"
-    database_type: "VARCHAR(10)"
-    api_path: "weather[0].icon"
-    complexity_levels: ["all"]  # NOT in minimal - descriptive only
-    
-  # === AIR QUALITY FIELDS ===
-  ow_pm25:
-    display_name: "PM2.5 concentration"
-    database_field: "ow_pm25"
-    database_type: "REAL"
-    api_path: "list[0].components.pm2_5"
-    complexity_levels: ["minimal", "all"]  # CRITICAL for health
-    
-  ow_pm10:
-    display_name: "PM10 concentration"
-    database_field: "ow_pm10"
-    database_type: "REAL"
-    api_path: "list[0].components.pm10"
-    complexity_levels: ["minimal", "all"]  # Important for health
-    
-  ow_ozone:
-    display_name: "Ozone concentration"
-    database_field: "ow_ozone"
-    database_type: "REAL"
-    api_path: "list[0].components.o3"
-    complexity_levels: ["minimal", "all"]  # Respiratory health
-    
-  ow_no2:
-    display_name: "NO2 concentration"
-    database_field: "ow_no2"
-    database_type: "REAL"
-    api_path: "list[0].components.no2"
-    complexity_levels: ["minimal", "all"]  # Respiratory health
-    
-  ow_so2:
-    display_name: "SO2 concentration"
-    database_field: "ow_so2"
-    database_type: "REAL"
-    api_path: "list[0].components.so2"
-    complexity_levels: ["minimal", "all"]  # Health impact
-    
-  ow_co:
-    display_name: "CO concentration"
-    database_field: "ow_co"
-    database_type: "REAL"
-    api_path: "list[0].components.co"
-    complexity_levels: ["minimal", "all"]  # Health impact
-    
-  ow_aqi:
-    display_name: "Air Quality Index"
-    database_field: "ow_aqi"
-    database_type: "INTEGER"
-    api_path: "list[0].main.aqi"
-    complexity_levels: ["minimal", "all"]  # PRIMARY health metric
+  custom:
+    description: "User-selected specific fields"
