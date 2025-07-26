@@ -717,6 +717,8 @@ class OpenWeatherConfigurator:
             field_mappings = field_helper.get_database_field_mappings(selected_fields)
             db_manager = DatabaseManager(self.config_dict)
             created_count = db_manager.create_database_fields(field_mappings)
+
+            self._save_field_selection(selected_fields)
             
             # Step 6: Write configuration
             self._write_enhanced_config(api_key, modules, complexity, selected_fields)
