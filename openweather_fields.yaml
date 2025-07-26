@@ -198,19 +198,3 @@ field_definitions:
     database_type: "INTEGER"
     api_path: "list[0].main.aqi"
     complexity_levels: ["minimal", "all"]  # PRIMARY health metric
-    
-  # === UV INDEX FIELDS (NEW - CRITICAL FOR EXTENSION 3) ===
-  ow_uv_current:
-    display_name: "Current UV index"
-    database_field: "ow_uv_current"
-    database_type: "REAL"
-    api_path: "current.uvi"  # One Call API
-    complexity_levels: ["minimal", "all"]  # ESSENTIAL for health predictions
-    
-  ow_uv_max:
-    display_name: "Daily maximum UV index"
-    database_field: "ow_uv_max"
-    database_type: "REAL"
-    api_path: "daily[0].uvi"  # One Call API
-    complexity_levels: ["all"]  # Important but not in minimal
-
