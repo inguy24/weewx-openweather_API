@@ -585,8 +585,8 @@ class OpenWeatherConfigurator:
             print(f"Warning: Could not load field definitions: {e}")
             return {}
     
-    def run_interactive_setup(self, config_dict):
-        """Enhanced interactive setup with unit system integration."""
+    def run_interactive_setup(self):
+        """Enhanced interactive setup with unit system integration - returns tuple."""
         print("\n" + "="*80)
         print("WEEWX OPENWEATHER EXTENSION CONFIGURATION")
         print("="*80)
@@ -620,9 +620,9 @@ class OpenWeatherConfigurator:
         complexity_level = self.ui.show_complexity_menu()
         self.complexity_level = complexity_level  # Store for config writing
         
-        # Get field selection
-        selected_fields = self.field_helper.get_selected_fields(complexity_level)
-        field_count = self.field_helper.estimate_field_count(selected_fields)
+        # Get field selection (flat format for database operations)
+        selected_fields = self.get_selected_fields(complexity_level)
+        field_count = self.estimate_field_count(selected_fields)
         
         # Confirm selection
         confirmed = self.ui.confirm_selection(complexity_level, field_count)
@@ -633,11 +633,12 @@ class OpenWeatherConfigurator:
         # Setup intervals
         intervals = self._setup_intervals()
         
-        # Write configuration
-        config_dict = self._write_enhanced_config(config_dict, selected_fields, api_key, intervals)
+        # Write configuration (converts flat to module format internally)
+        config_dict = self._write_enhanced_config(self.config_dict, selected_fields, api_key, intervals)
         
+        # FIX: Return tuple instead of single value
         return config_dict, selected_fields
-      
+
     def get_selected_fields(self, complexity_level):
         """Get fields and return in flat format for database operations."""
         if complexity_level == 'all':
@@ -1060,11 +1061,24 @@ class OpenWeatherInstaller(ExtensionInstaller):
         print("Service registration: Automatic via ExtensionInstaller data_services parameter")
         print("-" * 80)
         
-        # Delegate all interactive configuration to separate class
-        configurator = OpenWeatherConfigurator(engine.config_dict)
-        configuration_result = configurator.run_interactive_setup()
-        
-        if configuration_result == 'true':  # Check string value
+        try:
+            # Delegate all interactive configuration to separate class
+            # FIX: Pass engine.config_dict to constructor, not to run_interactive_setup
+            configurator = OpenWeatherConfigurator(engine.config_dict)
+            
+            # FIX: run_interactive_setup returns tuple, not string
+            config_dict, selected_fields = configurator.run_interactive_setup()
+            
+            # Update the engine configuration
+            engine.config_dict.update(config_dict)
+            
+            # Get database field mappings for selected fields
+            field_mappings = configurator.get_database_field_mappings(selected_fields)
+            
+            # Create database manager and add fields
+            db_manager = DatabaseManager(engine.config_dict)
+            db_manager.create_database_fields(field_mappings)
+            
             print("\n" + "="*80)
             print("INSTALLATION COMPLETED SUCCESSFULLY!")
             print("="*80)
@@ -1080,9 +1094,15 @@ class OpenWeatherInstaller(ExtensionInstaller):
             print("Check logs for successful operation:")
             print("  sudo journalctl -u weewx -f")
             print("="*80)
+            
+            return True
+            
+        except Exception as e:
+            print(f"\nInstallation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
         
-        return configuration_result == 'true'  # Convert string to boolean for ExtensionInstaller  
-    
     def reconfigure(self, engine):
         """Support field selection reconfiguration via 'weectl extension reconfigure OpenWeather'."""
         print("\n" + "="*80)
@@ -1092,25 +1112,33 @@ class OpenWeatherInstaller(ExtensionInstaller):
         print("Existing data will be preserved - only new fields will be added.")
         print()
         
-        # Create configurator (no longer FieldSelectionHelper)
-        configurator = OpenWeatherConfigurator()
-        
-        # Run interactive setup
-        config_dict, selected_fields = configurator.run_interactive_setup(engine.config_dict)
-        
-        # Get database field mappings
-        field_mappings = configurator.field_helper.get_database_field_mappings(selected_fields)
-        
-        # Create database manager and add any new fields
-        db_manager = DatabaseManager(engine.config_dict)
-        db_manager.create_database_fields(field_mappings)
-        
-        # Update engine configuration
-        engine.config_dict.update(config_dict)
-        
-        print("\n✓ Reconfiguration completed successfully")
-        print("Please restart WeeWX to apply changes: sudo systemctl restart weewx")
-        
+        try:
+            # FIX: Create configurator with engine.config_dict
+            configurator = OpenWeatherConfigurator(engine.config_dict)
+            
+            # FIX: run_interactive_setup returns tuple, not string
+            config_dict, selected_fields = configurator.run_interactive_setup()
+            
+            # FIX: Use configurator methods directly (no more field_helper)
+            field_mappings = configurator.get_database_field_mappings(selected_fields)
+            
+            # Create database manager and add any new fields
+            db_manager = DatabaseManager(engine.config_dict)
+            db_manager.create_database_fields(field_mappings)
+            
+            # Update engine configuration
+            engine.config_dict.update(config_dict)
+            
+            print("\n✓ Reconfiguration completed successfully")
+            print("Please restart WeeWX to apply changes: sudo systemctl restart weewx")
+            return True
+            
+        except Exception as e:
+            print(f"\nReconfiguration failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+          
     def _write_service_config(self, config_dict, api_settings):
         """Write only operational settings to weewx.conf (no field selection).
         
