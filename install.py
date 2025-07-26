@@ -743,7 +743,14 @@ class OpenWeatherConfigurator:
             print("- weewx-environmental-health (health risk assessment)")
             print("="*80)
             
-            return 'true'  # Return string instead of boolean
+            return {
+                'selected_fields': selected_fields,  # Goes to /etc/weewx/openweather_fields.conf
+                'api_settings': {                    # Goes to weewx.conf
+                    'api_key': api_key,
+                    'modules': modules,
+                    'complexity': complexity
+                }
+            }
             
         except Exception as e:
             # Ignore ConfigObj string/boolean conversion warnings that don't affect functionality
@@ -1009,6 +1016,269 @@ class OpenWeatherInstaller(ExtensionInstaller):
             print("="*80)
         
         return configuration_result == 'true'  # Convert string to boolean for ExtensionInstaller
+    
+    def _save_field_selection(self, selected_fields):
+        """Save field selection to extension-managed configuration file.
+        
+        Stores field selection separately from weewx.conf to prevent user editing
+        issues and configuration corruption during WeeWX updates.
+        
+        Args:
+            selected_fields (dict): Field selection data structure
+                Format: {'current_weather': ['temp', 'humidity'], 'air_quality': ['pm2_5']}
+        """
+        selection_file = '/etc/weewx/openweather_fields.conf'
+        
+        try:
+            print(f"  Saving field selection to {selection_file}...")
+            
+            # Create configuration object
+            config = configobj.ConfigObj()
+            config.filename = selection_file
+            
+            # Store field selection with metadata
+            config['field_selection'] = {
+                'selected_fields': selected_fields,
+                'selection_timestamp': str(int(time.time())),
+                'config_version': '1.0'
+            }
+            
+            # Write configuration file
+            config.write()
+            
+            # Set appropriate permissions (readable by weewx user)
+            os.chmod(selection_file, 0o644)
+            
+            print(f"    ✓ Field selection saved successfully")
+            print(f"    Selected modules: {list(selected_fields.keys())}")
+            
+            # Show field count summary
+            total_fields = 0
+            for module, fields in selected_fields.items():
+                if isinstance(fields, list):
+                    total_fields += len(fields)
+                    print(f"    {module}: {len(fields)} fields")
+                elif fields == 'all':
+                    print(f"    {module}: all available fields")
+            
+            if total_fields > 0:
+                print(f"    Total selected fields: {total_fields}")
+                
+        except Exception as e:
+            print(f"    ❌ Failed to save field selection: {e}")
+            raise Exception(f"Field selection storage failed: {e}")
+    
+    def _load_field_selection(self):
+        """Load field selection from extension-managed configuration file.
+        
+        Returns:
+            dict: Field selection data or empty dict if not found/invalid
+                Format: {'current_weather': ['temp', 'humidity'], 'air_quality': ['pm2_5']}
+        """
+        selection_file = '/etc/weewx/openweather_fields.conf'
+        
+        try:
+            if not os.path.exists(selection_file):
+                print(f"    Field selection file not found: {selection_file}")
+                return {}
+            
+            print(f"  Loading field selection from {selection_file}...")
+            
+            # Load configuration file
+            config = configobj.ConfigObj(selection_file)
+            
+            # Extract field selection data
+            field_selection_section = config.get('field_selection', {})
+            selected_fields = field_selection_section.get('selected_fields', {})
+            
+            if not selected_fields:
+                print(f"    ⚠️ No field selection found in configuration file")
+                return {}
+            
+            # Validate field selection structure
+            if not isinstance(selected_fields, dict):
+                print(f"    ❌ Invalid field selection format")
+                return {}
+            
+            print(f"    ✓ Field selection loaded successfully")
+            
+            # Show configuration info
+            timestamp = field_selection_section.get('selection_timestamp', 'unknown')
+            version = field_selection_section.get('config_version', 'unknown')
+            print(f"    Configuration version: {version}")
+            print(f"    Selection timestamp: {timestamp}")
+            print(f"    Loaded modules: {list(selected_fields.keys())}")
+            
+            return selected_fields
+            
+        except Exception as e:
+            print(f"    ❌ Failed to load field selection: {e}")
+            return {}
+    
+    def reconfigure(self, engine):
+        """Support field selection reconfiguration via 'weectl extension reconfigure OpenWeather'.
+        
+        Allows users to change their field selection without reinstalling the extension.
+        Updates database schema to add new fields but preserves existing data.
+        
+        Args:
+            engine: WeeWX engine instance
+            
+        Returns:
+            bool: True if reconfiguration succeeded, False otherwise
+        """
+        print("\n" + "="*80)
+        print("WEEWX OPENWEATHER EXTENSION RECONFIGURATION")
+        print("="*80)
+        print("This will allow you to change your field selection settings.")
+        print("Existing data will be preserved - only new fields will be added.")
+        print("-" * 80)
+        
+        try:
+            # Load current field selection
+            current_selection = self._load_field_selection()
+            
+            if current_selection:
+                print(f"\nCurrent field selection found:")
+                for module, fields in current_selection.items():
+                    if isinstance(fields, list):
+                        print(f"  {module}: {len(fields)} fields selected")
+                    else:
+                        print(f"  {module}: {fields}")
+            else:
+                print(f"\nNo current field selection found.")
+            
+            print(f"\nYou can now select new field configuration.")
+            print(f"Note: This will ADD new fields but won't remove existing ones.")
+            
+            # Run interactive field selection
+            configurator = OpenWeatherConfigurator(engine.config_dict)
+            configuration_result = configurator.run_interactive_setup()
+            
+            if not isinstance(configuration_result, dict):
+                print(f"\n❌ Configuration failed - invalid result format")
+                return False
+            
+            new_selected_fields = configuration_result.get('selected_fields', {})
+            if not new_selected_fields:
+                print(f"\n❌ Configuration failed - no field selection received")
+                return False
+            
+            # Save new field selection
+            self._save_field_selection(new_selected_fields)
+            
+            # Update database schema with new fields
+            print(f"\nUpdating database schema for new field selection...")
+            
+            # Get field mappings for new selection
+            field_helper = FieldSelectionHelper('/usr/share/weewx')  # Extension dir
+            field_mappings = field_helper.get_database_field_mappings(new_selected_fields)
+            
+            if field_mappings:
+                # Create database manager and add any missing fields
+                db_manager = DatabaseManager(engine.config_dict)
+                existing_fields, missing_fields = db_manager.check_database_fields(field_mappings.keys())
+                
+                if missing_fields:
+                    print(f"  Found {len(missing_fields)} new fields to add...")
+                    created_count = db_manager._add_missing_fields(missing_fields, field_mappings)
+                    print(f"  ✓ Added {created_count} new database fields")
+                else:
+                    print(f"  ✓ No new database fields needed")
+            
+            # Update operational configuration if needed
+            api_settings = configuration_result.get('api_settings', {})
+            if api_settings:
+                print(f"\nUpdating operational configuration...")
+                self._write_service_config(engine.config_dict, api_settings)
+                print(f"  ✓ Operational settings updated")
+            
+            print(f"\n" + "="*80)
+            print("RECONFIGURATION COMPLETED SUCCESSFULLY!")
+            print("="*80)
+            print("Changes made:")
+            print("✓ Field selection updated and saved")
+            print("✓ Database schema updated with new fields")
+            print("✓ Existing data preserved")
+            print()
+            print("Next steps:")
+            print("1. Restart WeeWX to use new configuration:")
+            print("   sudo systemctl restart weewx")
+            print("2. Monitor logs to verify operation:")
+            print("   sudo journalctl -u weewx -f")
+            print("="*80)
+            
+            return True
+            
+        except Exception as e:
+            print(f"\n❌ Reconfiguration failed: {e}")
+            print(f"The extension will continue to work with previous settings.")
+            return False
+    
+    def _write_service_config(self, config_dict, api_settings):
+        """Write only operational settings to weewx.conf (no field selection).
+        
+        Stores only the settings needed for service operation:
+        - API key and connection settings
+        - Timeouts and retry settings  
+        - Collection intervals
+        - Logging preferences
+        
+        Field selection is stored separately in openweather_fields.conf.
+        
+        Args:
+            config_dict: WeeWX configuration dictionary
+            api_settings (dict): Operational settings from interactive setup
+        """
+        try:
+            print(f"  Writing operational configuration to weewx.conf...")
+            
+            # Ensure OpenWeatherService section exists
+            if 'OpenWeatherService' not in config_dict:
+                config_dict['OpenWeatherService'] = configobj.ConfigObj()
+            
+            service_config = config_dict['OpenWeatherService']
+            
+            # Write operational settings only (NO field selection)
+            service_config['enable'] = 'true'
+            service_config['api_key'] = api_settings.get('api_key', 'REPLACE_WITH_YOUR_API_KEY')
+            service_config['timeout'] = str(api_settings.get('timeout', 30))
+            service_config['retry_attempts'] = str(api_settings.get('retry_attempts', 3))
+            service_config['log_success'] = str(api_settings.get('log_success', False)).lower()
+            service_config['log_errors'] = 'true'  # Always log errors
+            
+            # Write collection intervals
+            if 'intervals' not in service_config:
+                service_config['intervals'] = configobj.ConfigObj()
+            
+            intervals = api_settings.get('intervals', {})
+            service_config['intervals']['current_weather'] = str(intervals.get('current_weather', 3600))
+            service_config['intervals']['air_quality'] = str(intervals.get('air_quality', 7200))
+            service_config['intervals']['uv_index'] = str(intervals.get('uv_index', 3600))
+            
+            # Write module enable/disable settings
+            if 'modules' not in service_config:
+                service_config['modules'] = configobj.ConfigObj()
+            
+            # Enable modules based on what user selected (but don't store field details)
+            modules = api_settings.get('enabled_modules', ['current_weather', 'air_quality'])
+            service_config['modules']['current_weather'] = 'true' if 'current_weather' in modules else 'false'
+            service_config['modules']['air_quality'] = 'true' if 'air_quality' in modules else 'false'
+            service_config['modules']['uv_index'] = 'true' if 'uv_index' in modules else 'false'
+            service_config['modules']['forecast'] = 'true' if 'forecast' in modules else 'false'
+            
+            # EXPLICITLY DO NOT write field selection to weewx.conf
+            # Field selection is stored in /etc/weewx/openweather_fields.conf
+            
+            # Save configuration file
+            config_dict.write()
+            
+            print(f"    ✓ Operational configuration written successfully")
+            print(f"    Note: Field selection stored separately in openweather_fields.conf")
+            
+        except Exception as e:
+            print(f"    ❌ Failed to write service configuration: {e}")
+            raise Exception(f"Service configuration writing failed: {e}")
 
 
 if __name__ == '__main__':
