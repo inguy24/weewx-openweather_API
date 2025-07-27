@@ -1057,6 +1057,24 @@ class OpenWeatherConfigurator:
                 return module_name
         return None
 
+    def _setup_intervals(self):
+        """Setup collection intervals for enabled API modules using YAML recommended values."""
+        intervals = {}
+        
+        # Determine which modules are enabled based on selected fields
+        enabled_modules = set()
+        for field_name in self.field_definitions.keys():
+            module_name = self._find_module_for_field(field_name)
+            if module_name:
+                enabled_modules.add(module_name)
+        
+        # Get recommended intervals from YAML for enabled modules
+        for module_name in enabled_modules:
+            if module_name in self.api_config.get('api_modules', {}):
+                recommended_interval = self.api_config['api_modules'][module_name].get('recommended_interval', 3600)
+                intervals[module_name] = recommended_interval
+        
+        return intervals
 
 class OpenWeatherInstaller(ExtensionInstaller):
     """Main installer - handles WeeWX extension mechanics with proper service registration."""
