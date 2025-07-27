@@ -132,16 +132,15 @@ class OpenWeatherAPIError(Exception):
 class OpenWeatherDataCollector:
     """Enhanced data collector with field selection support."""
     
-    def __init__(self, api_key, timeout=30, selected_fields=None):
+    def __init__(self, api_key, timeout=30, selected_fields=None, config_dict=None):
         self.api_key = api_key
         self.timeout = int(timeout) if timeout else 30
-        self.selected_fields = selected_fields or {}  # Now expects flat field structure
+        self.selected_fields = selected_fields or {}
+        self.config_dict = config_dict
         self.field_manager = FieldSelectionManager(config_dict=self.config_dict)
         
-        # Determine which APIs we need based on selected fields
         self.required_apis = self._determine_required_apis()
         
-        # Base URLs for FREE OpenWeather APIs only
         self.base_urls = {
             'current_weather': 'http://api.openweathermap.org/data/2.5/weather',
             'air_quality': 'http://api.openweathermap.org/data/2.5/air_pollution'
@@ -207,7 +206,7 @@ class OpenWeatherDataCollector:
 class OpenWeatherBackgroundThread(threading.Thread):
     """Enhanced background thread with field selection support."""
     
-    def __init__(self, config, selected_fields):
+    def __init__(self, config, selected_fields, config_dict=None):
         super(OpenWeatherBackgroundThread, self).__init__(name='OpenWeatherBackgroundThread')
         self.daemon = True
         
@@ -215,29 +214,25 @@ class OpenWeatherBackgroundThread(threading.Thread):
         self.selected_fields = selected_fields
         self.running = True
         
-        # Initialize data collector
         self.collector = OpenWeatherDataCollector(
             api_key=config['api_key'],
-            timeout=int(config.get('timeout', 30)),  # FIX: Convert string to int
-            selected_fields=selected_fields
+            timeout=int(config.get('timeout', 30)),
+            selected_fields=selected_fields,
+            config_dict=config_dict
         )
         
-        # Thread-safe data storage
         self.data_lock = threading.Lock()
         self.latest_data = {}
         
-        # Get station coordinates
         station_config = config.get('Station', {})
         self.latitude = float(station_config.get('latitude', 0.0))
         self.longitude = float(station_config.get('longitude', 0.0))
         
-        # Module intervals - FIX: Convert strings to integers
         self.intervals = {
             'current_weather': int(config.get('intervals', {}).get('current_weather', 3600)),
             'air_quality': int(config.get('intervals', {}).get('air_quality', 7200))
         }
         
-        # Last collection times
         self.last_collection = {
             'current_weather': 0,
             'air_quality': 0
@@ -380,21 +375,19 @@ class OpenWeatherService(StdService):
     def _initialize_data_collection(self):
         """Initialize data collection components - graceful failure."""
         try:
-            # Set up data collector with active fields and service config
             self.api_client = OpenWeatherDataCollector(
                 api_key=self.service_config['api_key'],
                 selected_fields=self.active_fields,
                 timeout=int(self.service_config.get('timeout', 30)),
-                service_config=self.service_config  # ADD: Pass service config
+                config_dict=self.config_dict
             )
             
-            # Set up background collection thread
             self.background_thread = OpenWeatherBackgroundThread(
                 config=self.service_config,
-                selected_fields=self.active_fields
+                selected_fields=self.active_fields,
+                config_dict=self.config_dict
             )
             
-            # Start background collection
             self.background_thread.start()
             
             log.info("Data collection initialized successfully")
