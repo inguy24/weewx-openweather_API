@@ -414,30 +414,35 @@ class OpenWeatherService(StdService):
         return True 
 
     def _load_field_selection_from_config(self):
-        """Load field selection from weewx.conf (written by new install.py)."""
+        """Load field selection from weewx.conf (written by install.py)."""
         field_selection_config = self.service_config.get('field_selection', {})
         
         if not field_selection_config:
             log.error("No field_selection section found in configuration")
             return {}
         
-        # Read field selections per module (format: 'current_weather' = 'temp,humidity,pressure')
+        # FIX: Read the 'selected_fields' subsection, not the entire field_selection section
+        selected_fields_config = field_selection_config.get('selected_fields', {})
+        
+        if not selected_fields_config:
+            log.error("No selected_fields found in field_selection configuration")
+            return {}
+        
+        # Read field selections per module (format: 'current_weather': ['temp', 'humidity', 'pressure'])
         selected_fields = {}
         
-        for module_name, field_string in field_selection_config.items():
-            if module_name == 'complexity_level':
-                continue  # Skip metadata
-            
-            if isinstance(field_string, str) and field_string:
-                # Parse comma-separated field list
-                field_list = [f.strip() for f in field_string.split(',') if f.strip()]
-                if field_list:
-                    selected_fields[module_name] = field_list
-                    log.info(f"Loaded {len(field_list)} fields for module '{module_name}'")
-                else:
-                    log.warning(f"No fields configured for module '{module_name}'")
+        for module_name, field_list in selected_fields_config.items():
+            if isinstance(field_list, list) and field_list:
+                selected_fields[module_name] = field_list
+                log.info(f"Loaded {len(field_list)} fields for module '{module_name}'")
+            elif isinstance(field_list, str) and field_list:
+                # Handle string format (comma-separated) as fallback
+                field_list_parsed = [f.strip() for f in field_list.split(',') if f.strip()]
+                if field_list_parsed:
+                    selected_fields[module_name] = field_list_parsed
+                    log.info(f"Loaded {len(field_list_parsed)} fields for module '{module_name}'")
             else:
-                log.warning(f"Invalid field configuration for module '{module_name}': {field_string}")
+                log.warning(f"Invalid field configuration for module '{module_name}': {field_list}")
         
         if not selected_fields:
             log.error("No field selections found in configuration")
