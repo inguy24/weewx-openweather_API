@@ -136,7 +136,7 @@ class OpenWeatherDataCollector:
         self.api_key = api_key
         self.timeout = int(timeout) if timeout else 30
         self.selected_fields = selected_fields or {}  # Now expects flat field structure
-        self.field_manager = FieldSelectionManager()
+        self.field_manager = FieldSelectionManager(config_dict=self.config_dict)
         
         # Determine which APIs we need based on selected fields
         self.required_apis = self._determine_required_apis()
@@ -526,7 +526,7 @@ class OpenWeatherService(StdService):
 
     def _validate_module_based_selection(self):
         """Validate module-based field selection (new format from install.py)."""
-        field_manager = FieldSelectionManager()
+        field_manager = FieldSelectionManager(config_dict=self.config_dict)
         active_fields = {}
         total_selected = 0
         
@@ -583,7 +583,7 @@ class OpenWeatherService(StdService):
         log.info("Converting flat field selection to module format")
         
         # Convert flat format to module format for compatibility
-        field_manager = FieldSelectionManager()
+        field_manager = FieldSelectionManager(config_dict=self.config_dict)
         module_fields = {}
         
         try:
@@ -1103,7 +1103,7 @@ class OpenWeatherTester:
             self.longitude = -117.982542
         
         # Initialize field manager for testing
-        self.field_manager = FieldSelectionManager()
+        self.field_manager = FieldSelectionManager(config_dict=self.config_dict)
         
         print(f"OpenWeather Extension Tester v{VERSION}")
         print(f"Testing location: {self.latitude}, {self.longitude}")
