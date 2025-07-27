@@ -323,7 +323,7 @@ class OpenWeatherBackgroundThread(threading.Thread):
         self.data_lock = threading.Lock()
         self.latest_data = {}
         
-        station_config = config.get('Station', {})
+        station_config = config_dict.get('Station', {})
         self.latitude = float(station_config.get('latitude', 0.0))
         self.longitude = float(station_config.get('longitude', 0.0))
         
