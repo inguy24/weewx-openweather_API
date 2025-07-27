@@ -886,74 +886,92 @@ class OpenWeatherConfigurator:
         return modules
 
     def _write_enhanced_config(self, config_dict, selected_fields, api_key, intervals):
-        """Write complete configuration structure that openweather.py expects."""
-        service_config = config_dict.setdefault('OpenWeatherService', {})
-        
-        # Basic service configuration
-        service_config['enable'] = True
-        service_config['api_key'] = api_key
-        service_config['timeout'] = 30
-        service_config['log_success'] = False
-        service_config['log_errors'] = True
-        
-        # Unit system detection and integration
-        weewx_unit_system = self._detect_weewx_unit_system()
-        openweather_units = self._map_to_openweather_units(weewx_unit_system)
-        
-        service_config['unit_system'] = {
-            'weewx_system': weewx_unit_system,
-            'api_units': openweather_units,
-            'wind_conversion_needed': (weewx_unit_system == 'METRIC')
-        }
-        
-        print(f"Unit system integration: WeeWX '{weewx_unit_system}' → OpenWeather '{openweather_units}'")
-        if weewx_unit_system == 'METRIC':
-            print("  Note: Wind speed conversion (m/s → km/hr) will be applied automatically")
-        
-        # API modules configuration - write complete module data
-        api_modules = service_config.setdefault('api_modules', {})
-        for module_name, module_config in self.api_config.get('api_modules', {}).items():
-            api_modules[module_name] = {
-                'api_url': module_config.get('api_url', ''),
-                'interval': intervals.get(module_name, 3600),
-                'units_parameter': module_config.get('units_parameter', False)
-            }
-        
-        # Field selection in module-based format
-        field_groups = self._group_fields_by_module(selected_fields)
-        field_selection = service_config.setdefault('field_selection', {})
-        field_selection['complexity_level'] = getattr(self, 'complexity_level', 'custom')
-        field_selection['selection_timestamp'] = str(int(time.time()))
-        field_selection['config_version'] = '1.0'
-        field_selection['selected_fields'] = field_groups
-        
-        # Field mappings - write complete mapping data for each selected field
-        field_mappings = service_config.setdefault('field_mappings', {})
-        
-        for module_name, field_list in field_groups.items():
-            if module_name not in self.api_config.get('api_modules', {}):
-                continue
-                
-            module_mappings = field_mappings.setdefault(module_name, {})
-            module_fields = self.api_config['api_modules'][module_name].get('fields', {})
+        """Write enhanced configuration with unit system and conversion data."""
+        try:
+            print("  Writing enhanced service configuration...")
             
-            for service_field in field_list:
-                # Find the field config in YAML by service_field
-                field_config = None
-                for field_name, config in module_fields.items():
-                    if config.get('service_field') == service_field:
-                        field_config = config
-                        break
+            # Detect unit systems
+            weewx_unit_system = self._detect_weewx_unit_system()
+            api_units = self._map_to_openweather_units(weewx_unit_system)
+            
+            # Get service configuration section
+            service_config = config_dict.setdefault('OpenWeatherService', {})
+            
+            # Basic service settings
+            service_config['enable'] = 'true'
+            service_config['api_key'] = api_key
+            service_config['timeout'] = '30'
+            service_config['retry_attempts'] = '3'
+            service_config['log_success'] = 'false'
+            service_config['log_errors'] = 'true'
+            
+            # Unit system configuration
+            unit_system = service_config.setdefault('unit_system', {})
+            unit_system['weewx_system'] = weewx_unit_system
+            unit_system['api_units'] = api_units
+            
+            # API module settings from YAML
+            api_modules = service_config.setdefault('api_modules', {})
+            for module_name, module_config in self.api_config.get('api_modules', {}).items():
+                api_modules[module_name] = {
+                    'api_url': module_config.get('api_url', ''),
+                    'interval': intervals.get(module_name, 3600),
+                    'units_parameter': module_config.get('units_parameter', False)
+                }
+            
+            # Field selection in module-based format
+            field_groups = self._group_fields_by_module(selected_fields)
+            field_selection = service_config.setdefault('field_selection', {})
+            field_selection['complexity_level'] = getattr(self, 'complexity_level', 'custom')
+            field_selection['selection_timestamp'] = str(int(time.time()))
+            field_selection['config_version'] = '1.0'
+            field_selection['selected_fields'] = field_groups
+            
+            # Field mappings - write complete mapping data for each selected field INCLUDING conversion info
+            field_mappings = service_config.setdefault('field_mappings', {})
+            
+            for module_name, field_list in field_groups.items():
+                if module_name not in self.api_config.get('api_modules', {}):
+                    continue
+                    
+                module_mappings = field_mappings.setdefault(module_name, {})
+                module_fields = self.api_config['api_modules'][module_name].get('fields', {})
                 
-                if field_config:
-                    module_mappings[service_field] = {
-                        'database_field': field_config.get('database_field', f'ow_{service_field}'),
-                        'api_path': field_config.get('api_path', ''),
-                        'unit_group': field_config.get('unit_group', 'group_count'),
-                        'database_type': field_config.get('database_type', 'REAL')
-                    }
-        
-        return config_dict
+                for service_field in field_list:
+                    # Find the field config in YAML by service_field
+                    field_config = None
+                    for field_name, config in module_fields.items():
+                        if config.get('service_field') == service_field:
+                            field_config = config
+                            break
+                    
+                    if field_config:
+                        module_mappings[service_field] = {
+                            'database_field': field_config.get('database_field', f'ow_{service_field}'),
+                            'api_path': field_config.get('api_path', ''),
+                            'unit_group': field_config.get('unit_group', 'group_count'),
+                            'database_type': field_config.get('database_type', 'REAL'),
+                            # NEW: Add conversion info from YAML
+                            'unit_conversion': field_config.get('unit_conversion')  # Will be None if not present
+                        }
+            
+            # NEW: Write unit conversion specifications from YAML to CONF
+            if 'unit_conversions' in self.api_config:
+                service_config['unit_conversions'] = dict(self.api_config['unit_conversions'])
+            
+            # Save configuration file
+            config_dict.write()
+            
+            print(f"    ✓ Enhanced configuration written successfully")
+            print(f"      - Unit system: {weewx_unit_system} → OpenWeather {api_units}")
+            print(f"      - Field mappings: {len(field_groups)} modules configured")
+            print(f"      - Conversion specs: {'Yes' if 'unit_conversions' in self.api_config else 'No'}")
+            
+            return config_dict
+            
+        except Exception as e:
+            print(f"    ❌ Failed to write enhanced configuration: {e}")
+            raise Exception(f"Enhanced configuration writing failed: {e}")
 
     def _detect_weewx_unit_system(self):
         """Detect WeeWX unit system from existing configuration."""
@@ -1125,6 +1143,31 @@ class OpenWeatherConfigurator:
                 intervals[module_name] = recommended_interval
         
         return intervals
+
+    def _determine_module_for_field(self, field_name):
+        """Determine which module a field belongs to based on field name using YAML data."""
+        # Strip 'ow_' prefix if present
+        clean_field_name = field_name.replace('ow_', '')
+        
+        # Search through YAML api_modules to find which module contains this field
+        for module_name, module_config in self.api_config.get('api_modules', {}).items():
+            module_fields = module_config.get('fields', {})
+            
+            for yaml_field_name, field_config in module_fields.items():
+                # Check if this field matches by service_field or database_field
+                service_field = field_config.get('service_field', '')
+                database_field = field_config.get('database_field', '')
+                
+                if (service_field == clean_field_name or 
+                    database_field == field_name or 
+                    yaml_field_name == field_name):
+                    return module_name
+        
+        # Fallback logic based on field name patterns
+        if any(prefix in clean_field_name for prefix in ['pm25', 'pm10', 'aqi', 'ozone', 'no2', 'so2', 'co', 'nh3', 'no']):
+            return 'air_quality'
+        else:
+            return 'current_weather'
 
 
 class OpenWeatherInstaller(ExtensionInstaller):
