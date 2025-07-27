@@ -110,9 +110,6 @@ class OpenWeatherDataCollector:
         self.selected_fields = selected_fields or {}  # Now expects flat field structure
         self.field_manager = FieldSelectionManager()
         
-        # Get API path mappings for selected fields (updated for flat structure)
-        self.api_mappings = self.field_manager.get_api_path_mappings(self.selected_fields)
-        
         # Determine which APIs we need based on selected fields
         self.required_apis = self._determine_required_apis()
         
@@ -219,7 +216,6 @@ class OpenWeatherBackgroundThread(threading.Thread):
         }
         
         log.info(f"OpenWeather background thread initialized for location: {self.latitude}, {self.longitude}")
-
     
     def run(self):
         """Main background thread loop."""
@@ -748,22 +744,14 @@ class OpenWeatherService(StdService):
         
         return api_units
 
-    def _get_all_fields_for_module(self, module, field_manager):
-        """Get all available fields for a module when 'all' is selected."""
+    def _get_all_fields_for_module(self, module):
+        """Get all available fields for a module from service configuration."""
         try:
-            # Load from YAML directly
-            with open(field_manager.config_path['definitions'], 'r') as f:
-                api_config = yaml.safe_load(f)
-            
-            module_config = api_config.get('api_modules', {}).get(module, {})
-            fields = []
-            for field_name, field_config in module_config.get('fields', {}).items():
-                service_field = field_config.get('service_field', field_name)
-                fields.append(service_field)
-            
-            return fields
+            field_mappings = self.service_config.get('field_mappings', {})
+            module_mappings = field_mappings.get(module, {})
+            return list(module_mappings.keys())
         except Exception as e:
-            log.error(f"Error getting all fields for module '{module}': {e}")
+            log.error(f"Error getting fields for module '{module}': {e}")
             return []
     
     def _validate_forecast_table(self):
