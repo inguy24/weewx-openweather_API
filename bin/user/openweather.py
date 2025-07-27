@@ -17,7 +17,6 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import socket
-import yaml
 import os
 import argparse
 import sys
@@ -34,107 +33,45 @@ log = weeutil.logger.logging.getLogger(__name__)
 VERSION = "1.0.0"
 
 class FieldSelectionManager:
-    """Manages field selection with smart defaults and custom configurations."""
+    """Manages field selection using configuration data (no YAML at runtime)."""
     
-    def __init__(self, config_path=None):
-        self.config_path = config_path or self._find_config_files()
-        self.field_definitions = self._load_field_definitions()
+    def __init__(self, config_dict=None):
+        self.config_dict = config_dict
         
-    def _find_config_files(self):
-        """Find YAML configuration files in extension directory."""
-        base_path = os.path.dirname(__file__)
-        return {
-            'definitions': os.path.join(base_path, '../../openweather_fields.yaml')
-        }
-    
-    def _load_field_definitions(self):
-        """Load field definitions from new API-first YAML structure."""
-        try:
-            with open(self.config_path['definitions'], 'r') as f:
-                api_config = yaml.safe_load(f)
-            
-            # Convert API-first structure to flat field definitions for compatibility
-            field_definitions = {}
-            
-            for module_name, module_config in api_config.get('api_modules', {}).items():
-                for field_name, field_config in module_config.get('fields', {}).items():
-                    field_definitions[field_name] = field_config
-            
-            return field_definitions
-            
-        except Exception as e:
-            log.error(f"Error loading field definitions: {e}")
-            return {}
-    
     def get_database_field_mappings(self, selected_fields):
-        """Convert field selection to database field mappings - handle both formats."""
+        """Convert field selection to database field mappings using conf data."""
         mappings = {}
         
-        if not selected_fields:
-            return mappings
-        
-        # Handle module-based format: {'current_weather': ['temp', 'humidity']}
-        if any(isinstance(v, list) for v in selected_fields.values()):
+        # If we have config_dict, get field mappings from it
+        if self.config_dict:
+            service_config = self.config_dict.get('OpenWeatherService', {})
+            field_mappings = service_config.get('field_mappings', {})
+            
+            # Extract database fields from conf mappings
             for module_name, field_list in selected_fields.items():
-                if not isinstance(field_list, list):
-                    continue
-                
-                for service_field in field_list:
-                    # Map service field back to database field using known mappings
-                    db_field = self._map_service_to_database_field(service_field, module_name)
-                    if db_field:
-                        db_type = self._get_database_type_for_field(db_field)
-                        mappings[db_field] = db_type
+                if isinstance(field_list, list):
+                    module_mappings = field_mappings.get(module_name, {})
+                    for service_field in field_list:
+                        field_mapping = module_mappings.get(service_field, {})
+                        if isinstance(field_mapping, dict):
+                            db_field = field_mapping.get('database_field', f'ow_{service_field}')
+                            db_type = field_mapping.get('database_type', 'REAL')
+                            mappings[db_field] = db_type
         
-        # Handle flat format: {'ow_temperature': True}
-        else:
-            for field_name, selected in selected_fields.items():
-                if selected and field_name in self.field_definitions:
-                    field_info = self.field_definitions[field_name]
-                    mappings[field_info['database_field']] = field_info['database_type']
+        # Fallback: generate basic mappings
+        if not mappings:
+            for module_name, field_list in selected_fields.items():
+                if isinstance(field_list, list):
+                    for service_field in field_list:
+                        db_field = f'ow_{service_field}'
+                        # Determine type based on field name
+                        if any(text_field in service_field for text_field in ['weather_main', 'weather_description', 'weather_icon']):
+                            mappings[db_field] = 'VARCHAR(50)'
+                        elif 'aqi' in service_field:
+                            mappings[db_field] = 'INTEGER'
+                        else:
+                            mappings[db_field] = 'REAL'
         
-        return mappings
-
-    def _map_service_to_database_field(self, service_field, module_name):
-        """Map service field name to database field name using YAML data."""
-        try:
-            # Load from YAML directly to get the mapping
-            with open(self.config_path['definitions'], 'r') as f:
-                api_config = yaml.safe_load(f)
-            
-            # Look up the service field in the specified module
-            module_config = api_config.get('api_modules', {}).get(module_name, {})
-            for field_name, field_config in module_config.get('fields', {}).items():
-                if field_config.get('service_field') == service_field:
-                    return field_config.get('database_field')
-            
-            # If not found, return None
-            return None
-            
-        except Exception as e:
-            log.error(f"Error mapping service field {service_field} in module {module_name}: {e}")
-            return None
-
-    def _get_database_type_for_field(self, database_field):
-        """Get database type for a field."""
-        # Most fields are REAL, exceptions are VARCHAR
-        varchar_fields = ['ow_weather_main', 'ow_weather_description', 'ow_weather_icon']
-        integer_fields = ['ow_aqi']
-        
-        if database_field in varchar_fields:
-            return 'VARCHAR(50)'
-        elif database_field in integer_fields:
-            return 'INTEGER'
-        else:
-            return 'REAL'
-    
-    def get_api_path_mappings(self, selected_fields):
-        """Get API path mappings for flat field selection."""
-        mappings = {}
-        for field_name, selected in selected_fields.items():
-            if selected and field_name in self.field_definitions:
-                field_info = self.field_definitions[field_name]
-                mappings[field_info['database_field']] = field_info['api_path']
         return mappings
 
 
@@ -394,6 +331,33 @@ class OpenWeatherService(StdService):
         self.bind(weewx.NEW_ARCHIVE_RECORD, self.new_archive_record)
         
         log.info("OpenWeather service initialized successfully")
+
+    def _initialize_data_collection(self):
+        """Initialize data collection components - graceful failure."""
+        try:
+            # Set up data collector with active fields only
+            self.api_client = OpenWeatherDataCollector(
+                api_key=self.service_config['api_key'],
+                selected_fields=self.active_fields,
+                timeout=int(self.service_config.get('timeout', 30))
+            )
+            
+            # Set up background collection thread (only config and selected_fields - no api_client!)
+            self.background_thread = OpenWeatherBackgroundThread(
+                config=self.service_config,
+                selected_fields=self.active_fields
+            )
+            
+            # Start background collection
+            self.background_thread.start()
+            
+            log.info("Data collection initialized successfully")
+            self.service_enabled = True
+            
+        except Exception as e:
+            log.error(f"Failed to initialize data collection: {e}")
+            log.error("OpenWeather data collection disabled")
+            self.service_enabled = False
 
     def _validate_basic_config(self):
         """Basic configuration validation - keep existing logic."""
@@ -688,7 +652,7 @@ class OpenWeatherService(StdService):
         except Exception as e:
             log.error(f"Error looking up database field for {module}.{field}: {e}")
             return None
-     
+ 
     def _setup_unit_system(self):
         """Set up WeeWX unit system integration and detect unit preferences."""
         try:
@@ -915,7 +879,9 @@ class OpenWeatherService(StdService):
             
             # Build record with all expected fields, using None for missing data
             record_update = {}
-            field_manager = FieldSelectionManager()
+            
+            # Use existing field manager with config
+            field_manager = FieldSelectionManager(self.config_dict)
             expected_fields = field_manager.get_database_field_mappings(self.active_fields)
             
             fields_injected = 0
@@ -938,8 +904,7 @@ class OpenWeatherService(StdService):
                 
         except Exception as e:
             log.error(f"Error injecting OpenWeather data: {e}")
-            # Continue without OpenWeather data - don't break the archive record
-    
+
     def get_latest_data(self):
         """Get latest collected data - never fails."""
         try:
@@ -949,6 +914,72 @@ class OpenWeatherService(StdService):
             log.error(f"Error getting latest data: {e}")
         return {}
     
+    def _setup_unit_system(self):
+        """Set up unit system for OpenWeather fields using ONLY conf data."""
+        try:
+            import weewx.units
+            
+            # Get unit system info from conf (written by install.py)
+            unit_config = self.service_config.get('unit_system', {})
+            weewx_unit_system = unit_config.get('weewx_system', 'US')
+            api_units = unit_config.get('api_units', 'imperial')
+            
+            log.info(f"Unit system: WeeWX='{weewx_unit_system}' → OpenWeather='{api_units}'")
+            
+            # Add concentration unit group for air quality
+            if 'group_concentration' not in weewx.units.USUnits:
+                weewx.units.USUnits['group_concentration'] = 'microgram_per_meter_cubed'
+                weewx.units.MetricUnits['group_concentration'] = 'microgram_per_meter_cubed'
+                weewx.units.MetricWXUnits['group_concentration'] = 'microgram_per_meter_cubed'
+            
+            # ONLY read unit groups from conf - NO hardcoding or determination
+            conf_field_mappings = self.service_config.get('field_mappings', {})
+            
+            for module_name, field_list in self.active_fields.items():
+                module_mappings = conf_field_mappings.get(module_name, {})
+                
+                for service_field in field_list:
+                    field_mapping = module_mappings.get(service_field, {})
+                    
+                    if isinstance(field_mapping, dict):
+                        db_field = field_mapping.get('database_field', f'ow_{service_field}')
+                        unit_group = field_mapping.get('unit_group', 'group_count')
+                        
+                        # Assign unit group from conf data ONLY
+                        weewx.units.obs_group_dict[db_field] = unit_group
+            
+            log.info("Unit system setup completed")
+            
+        except Exception as e:
+            log.error(f"Failed to setup unit system: {e}")
+
+    def _initialize_data_collection(self):
+        """Initialize data collection components - graceful failure."""
+        try:
+            # Set up data collector with active fields only
+            self.api_client = OpenWeatherDataCollector(
+                api_key=self.service_config['api_key'],
+                selected_fields=self.active_fields,
+                timeout=int(self.service_config.get('timeout', 30))
+            )
+            
+            # Set up background collection thread (remove api_client parameter)
+            self.background_thread = OpenWeatherBackgroundThread(
+                config=self.service_config,
+                selected_fields=self.active_fields
+            )
+            
+            # Start background collection
+            self.background_thread.start()
+            
+            log.info("Data collection initialized successfully")
+            self.service_enabled = True
+            
+        except Exception as e:
+            log.error(f"Failed to initialize data collection: {e}")
+            log.error("OpenWeather data collection disabled")
+            self.service_enabled = False
+
     def shutDown(self):
         """Clean shutdown - never fails."""
         try:
