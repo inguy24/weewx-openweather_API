@@ -137,7 +137,6 @@ class OpenWeatherDataCollector:
         self.timeout = int(timeout) if timeout else 30
         self.selected_fields = selected_fields or {}
         self.config_dict = config_dict
-        self.field_manager = FieldSelectionManager(config_dict=self.config_dict)
         
         self.required_apis = self._determine_required_apis()
         
@@ -147,20 +146,41 @@ class OpenWeatherDataCollector:
         }
 
     def _determine_required_apis(self):
-        """Determine which FREE APIs are needed based on selected fields."""
+        """Determine which FREE APIs are needed based on selected fields using config data."""
         required = set()
         
-        for field_name, selected in self.selected_fields.items():
-            if not selected or field_name not in self.field_manager.field_definitions:
+        if not self.config_dict:
+            log.error("No config_dict available for API determination")
+            return required
+        
+        service_config = self.config_dict.get('OpenWeatherService', {})
+        field_mappings = service_config.get('field_mappings', {})
+        
+        if not field_mappings:
+            log.error("No field_mappings found in configuration")
+            return required
+        
+        for module_name, field_list in self.selected_fields.items():
+            if not isinstance(field_list, list):
                 continue
                 
-            api_path = self.field_manager.field_definitions[field_name]['api_path']
-            
-            # Determine API source from path (FREE APIs only)
-            if api_path.startswith('main.') or api_path.startswith('weather[') or api_path.startswith('wind.') or api_path.startswith('clouds.'):
-                required.add('current_weather')
-            elif api_path.startswith('list[0].components.') or api_path.startswith('list[0].main.'):
-                required.add('air_quality')
+            module_mappings = field_mappings.get(module_name, {})
+            if not module_mappings:
+                continue
+                
+            for service_field in field_list:
+                field_mapping = module_mappings.get(service_field, {})
+                if not isinstance(field_mapping, dict):
+                    continue
+                    
+                api_path = field_mapping.get('api_path', '')
+                if not api_path:
+                    continue
+                    
+                if api_path.startswith('main.') or api_path.startswith('weather[') or api_path.startswith('wind.') or api_path.startswith('clouds.') or api_path.startswith('visibility') or api_path.startswith('rain.') or api_path.startswith('snow.'):
+                    required.add('current_weather')
+                elif api_path.startswith('list[0].components.') or api_path.startswith('list[0].main.'):
+                    required.add('air_quality')
         
         return required
     
@@ -201,6 +221,44 @@ class OpenWeatherDataCollector:
                 current = current[part]
         
         return current
+
+    def _validate_field_selection(self):
+        """Validate that selected fields have proper configuration data."""
+        if not self.config_dict:
+            return False
+            
+        service_config = self.config_dict.get('OpenWeatherService', {})
+        field_mappings = service_config.get('field_mappings', {})
+        
+        if not field_mappings:
+            log.error("No field mappings found in configuration")
+            return False
+        
+        valid_count = 0
+        total_count = 0
+        
+        for module_name, field_list in self.selected_fields.items():
+            if not isinstance(field_list, list):
+                continue
+                
+            module_mappings = field_mappings.get(module_name, {})
+            
+            for service_field in field_list:
+                total_count += 1
+                field_mapping = module_mappings.get(service_field, {})
+                
+                if isinstance(field_mapping, dict) and field_mapping.get('api_path'):
+                    valid_count += 1
+                else:
+                    log.warning(f"Invalid or missing field mapping for {module_name}.{service_field}")
+        
+        if valid_count == 0:
+            log.error("No valid field mappings found")
+            return False
+        elif valid_count < total_count:
+            log.warning(f"Only {valid_count}/{total_count} fields have valid configuration")
+        
+        return True
 
 
 class OpenWeatherBackgroundThread(threading.Thread):
