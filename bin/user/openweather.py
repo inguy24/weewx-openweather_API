@@ -74,6 +74,27 @@ class FieldSelectionManager:
         
         return mappings
 
+    def _map_service_to_database_field(self, service_field, module_name):
+        """Map service field name to database field name using CONF data (not YAML)."""
+        try:
+            if not self.config_dict:
+                return f'ow_{service_field}'  # Fallback
+            
+            service_config = self.config_dict.get('OpenWeatherService', {})
+            field_mappings = service_config.get('field_mappings', {})
+            module_mappings = field_mappings.get(module_name, {})
+            
+            field_mapping = module_mappings.get(service_field, {})
+            if isinstance(field_mapping, dict):
+                return field_mapping.get('database_field', f'ow_{service_field}')
+            
+            # Fallback to standard naming
+            return f'ow_{service_field}'
+            
+        except Exception as e:
+            log.error(f"Error mapping service field {service_field}: {e}")
+            return f'ow_{service_field}'
+
 
 class OpenWeatherAPIError(Exception):
     """Custom exception for OpenWeather API errors."""
@@ -576,27 +597,6 @@ class OpenWeatherService(StdService):
             log.error(f"Failed to convert flat field selection: {e}")
             return {}
 
-    def _map_database_to_service_field(self, database_field):
-        """Map database field name back to service field name."""
-        # Simple mapping for common fields
-        mapping = {
-            'ow_temperature': 'temp',
-            'ow_feels_like': 'feels_like', 
-            'ow_humidity': 'humidity',
-            'ow_pressure': 'pressure',
-            'ow_wind_speed': 'wind_speed',
-            'ow_wind_direction': 'wind_direction',
-            'ow_pm25': 'pm2_5',
-            'ow_pm10': 'pm10',
-            'ow_aqi': 'aqi',
-            'ow_ozone': 'ozone',
-            'ow_no2': 'no2',
-            'ow_so2': 'so2',
-            'ow_co': 'co'
-        }
-        
-        return mapping.get(database_field, database_field.replace('ow_', ''))
-
     def _determine_module_for_field(self, field_name):
         """Determine which module a field belongs to based on field name."""
         if any(pollutant in field_name for pollutant in ['pm25', 'pm10', 'aqi', 'ozone', 'no2', 'so2', 'co']):
@@ -644,15 +644,14 @@ class OpenWeatherService(StdService):
         return active_fields
     
     def _get_database_field_name(self, module, field, field_manager):
-        """Get database field name for a logical field name using YAML data."""
+        """Get database field name for a logical field name using CONF data."""
         try:
-            # Use the updated method from FieldSelectionManager
+            # Use the field manager's method that reads from CONF
             return field_manager._map_service_to_database_field(field, module)
-            
         except Exception as e:
             log.error(f"Error looking up database field for {module}.{field}: {e}")
             return None
- 
+
     def _setup_unit_system(self):
         """Set up WeeWX unit system integration and detect unit preferences."""
         try:
@@ -865,8 +864,7 @@ class OpenWeatherService(StdService):
             self.service_enabled = False
     
     def new_archive_record(self, event):
-        """Inject OpenWeather data into archive record - never fails."""
-        
+        """Inject OpenWeather data into archive record with unit conversion - never fails."""
         if not self.service_enabled:
             return  # Silently skip if service is disabled
         
@@ -887,8 +885,17 @@ class OpenWeatherService(StdService):
             fields_injected = 0
             for db_field, field_type in expected_fields.items():
                 if db_field in collected_data and collected_data[db_field] is not None:
-                    # Successfully collected data
-                    record_update[db_field] = collected_data[db_field]
+                    # Successfully collected data - apply conversion if needed
+                    raw_value = collected_data[db_field]
+                    
+                    # Determine service field and module for conversion
+                    service_field = db_field.replace('ow_', '')  # e.g., 'ow_wind_speed' → 'wind_speed'
+                    module_name = self._determine_module_for_field(db_field)
+                    
+                    # Apply unit conversion if needed
+                    converted_value = self._convert_field_if_needed(service_field, raw_value, module_name)
+                    
+                    record_update[db_field] = converted_value
                     fields_injected += 1
                 else:
                     # Missing data - use None/NULL
@@ -980,6 +987,75 @@ class OpenWeatherService(StdService):
             log.error("OpenWeather data collection disabled")
             self.service_enabled = False
 
+    def _get_api_units_parameter(self):
+        """Get the units parameter for OpenWeather API calls (metric/imperial/standard)."""
+        try:
+            unit_config = self.service_config.get('unit_system', {})
+            api_units = unit_config.get('api_units', 'metric')
+            return api_units
+        except Exception as e:
+            log.error(f"Error getting API units parameter: {e}")
+            return 'metric'  # Safe fallback
+
+    def _convert_field_if_needed(self, field_name, value, module_name):
+        """Generic field conversion based on CONF data from YAML (replaces hardcoded wind speed method)."""
+        try:
+            if value is None:
+                return value
+            
+            # Get field mapping for this specific field
+            field_mappings = self.service_config.get('field_mappings', {})
+            module_mappings = field_mappings.get(module_name, {})
+            field_config = module_mappings.get(field_name, {})
+            
+            # Check if this field needs conversion
+            conversion_name = field_config.get('unit_conversion')
+            if not conversion_name:
+                return value  # No conversion needed
+            
+            # Get conversion specifications (written by install.py from YAML)
+            unit_conversions = self.service_config.get('unit_conversions', {})
+            conversion_spec = unit_conversions.get(conversion_name, {})
+            
+            if not conversion_spec:
+                log.warning(f"Conversion '{conversion_name}' not found for field {field_name}")
+                return value
+            
+            # Check if conversion applies to current unit system
+            applies_when = conversion_spec.get('applies_when', {})
+            unit_system_config = self.service_config.get('unit_system', {})
+            
+            current_weewx_system = unit_system_config.get('weewx_system')
+            current_api_units = unit_system_config.get('api_units')
+            
+            required_weewx = applies_when.get('weewx_system')
+            required_api = applies_when.get('openweather_units')
+            
+            # Only convert if conditions match
+            if (required_weewx and current_weewx_system != required_weewx) or \
+               (required_api and current_api_units != required_api):
+                return value  # Conditions don't match, no conversion
+            
+            # Apply the conversion formula
+            formula = conversion_spec.get('formula', 'x')
+            try:
+                # Simple formula evaluation (e.g., "x * 3.6")
+                # Replace 'x' with the actual value
+                converted_value = eval(formula.replace('x', str(float(value))))
+                
+                log.debug(f"Converted {field_name}: {value} → {converted_value} "
+                         f"({conversion_spec.get('from_unit', '?')} → {conversion_spec.get('to_unit', '?')})")
+                
+                return converted_value
+                
+            except Exception as eval_error:
+                log.error(f"Error evaluating conversion formula '{formula}' for {field_name}: {eval_error}")
+                return value
+            
+        except Exception as e:
+            log.error(f"Error converting field {field_name}: {e}")
+            return value
+            
     def shutDown(self):
         """Clean shutdown - never fails."""
         try:
