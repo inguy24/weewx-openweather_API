@@ -886,7 +886,7 @@ class OpenWeatherConfigurator:
         return modules
 
     def _write_enhanced_config(self, config_dict, selected_fields, api_key, intervals):
-        """Write configuration in the module-based format that openweather.py expects."""
+        """Write complete configuration structure that openweather.py expects."""
         service_config = config_dict.setdefault('OpenWeatherService', {})
         
         # Basic service configuration
@@ -910,33 +910,83 @@ class OpenWeatherConfigurator:
         if weewx_unit_system == 'METRIC':
             print("  Note: Wind speed conversion (m/s → km/hr) will be applied automatically")
         
-        # Module configuration - group fields by API source
-        modules = service_config.setdefault('modules', {})
+        # API modules configuration - write complete module data
+        api_modules = service_config.setdefault('api_modules', {})
+        for module_name, module_config in self.api_config.get('api_modules', {}).items():
+            api_modules[module_name] = {
+                'api_url': module_config.get('api_url', ''),
+                'interval': intervals.get(module_name, 3600),
+                'units_parameter': module_config.get('units_parameter', False)
+            }
         
-        # Group selected fields by module for service compatibility
+        # Field selection in module-based format
         field_groups = self._group_fields_by_module(selected_fields)
-        
-        for module_name, field_list in field_groups.items():
-            if field_list:  # Only include modules with selected fields
-                modules[module_name] = True
-            else:
-                modules[module_name] = False
-        
-        # Intervals configuration
-        intervals_config = service_config.setdefault('intervals', {})
-        intervals_config.update(intervals)
-        
-        # CRITICAL: Write field selection in MODULE-BASED format for openweather.py
-        # Store grouped fields in the format the service expects: {'current_weather': ['temp', 'humidity']}
         field_selection = service_config.setdefault('field_selection', {})
         field_selection['complexity_level'] = getattr(self, 'complexity_level', 'custom')
         field_selection['selection_timestamp'] = str(int(time.time()))
         field_selection['config_version'] = '1.0'
-        
-        # Store selected fields in MODULE-BASED format (what openweather.py expects)
         field_selection['selected_fields'] = field_groups
         
+        # Field mappings - write complete mapping data for each selected field
+        field_mappings = service_config.setdefault('field_mappings', {})
+        
+        for module_name, field_list in field_groups.items():
+            if module_name not in self.api_config.get('api_modules', {}):
+                continue
+                
+            module_mappings = field_mappings.setdefault(module_name, {})
+            module_fields = self.api_config['api_modules'][module_name].get('fields', {})
+            
+            for service_field in field_list:
+                # Find the field config in YAML by service_field
+                field_config = None
+                for field_name, config in module_fields.items():
+                    if config.get('service_field') == service_field:
+                        field_config = config
+                        break
+                
+                if field_config:
+                    module_mappings[service_field] = {
+                        'database_field': field_config.get('database_field', f'ow_{service_field}'),
+                        'api_path': field_config.get('api_path', ''),
+                        'unit_group': field_config.get('unit_group', 'group_count'),
+                        'database_type': field_config.get('database_type', 'REAL')
+                    }
+        
         return config_dict
+
+    def _detect_weewx_unit_system(self):
+        """Detect WeeWX unit system from existing configuration."""
+        try:
+            weewx_config_path = '/etc/weewx/weewx.conf'
+            if not os.path.exists(weewx_config_path):
+                weewx_config_path = os.path.expanduser('~/weewx-data/weewx.conf')
+            
+            if os.path.exists(weewx_config_path):
+                config = configobj.ConfigObj(weewx_config_path)
+                stdconvert_config = config.get('StdConvert', {})
+                target_unit = stdconvert_config.get('target_unit', 'US').upper()
+                
+                if target_unit in ['US', 'METRICWX', 'METRIC']:
+                    return target_unit
+            
+            print("Warning: Could not detect WeeWX unit system, defaulting to US")
+            return 'US'
+            
+        except Exception as e:
+            print(f"Warning: Error detecting WeeWX unit system: {e}, defaulting to US")
+            return 'US'
+
+    def _map_to_openweather_units(self, weewx_unit_system):
+        """Map WeeWX unit system to OpenWeather API units parameter."""
+        mapping = {
+            'US': 'imperial',        # F, mph, inHg → OpenWeather imperial
+            'METRICWX': 'metric',    # C, m/s, mbar → OpenWeather metric (perfect match)
+            'METRIC': 'metric'       # C, km/hr, mbar → OpenWeather metric (wind needs conversion)
+        }
+        
+        api_units = mapping.get(weewx_unit_system, 'metric')  # Fallback to metric
+        return api_units
 
     def _setup_unit_system(self):
         """Configure WeeWX unit system for OpenWeather fields."""
@@ -1075,6 +1125,7 @@ class OpenWeatherConfigurator:
                 intervals[module_name] = recommended_interval
         
         return intervals
+
 
 class OpenWeatherInstaller(ExtensionInstaller):
     """Main installer - handles WeeWX extension mechanics with proper service registration."""
