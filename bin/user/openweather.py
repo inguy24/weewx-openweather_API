@@ -39,61 +39,89 @@ class FieldSelectionManager:
         self.config_dict = config_dict
         
     def get_database_field_mappings(self, selected_fields):
-        """Convert field selection to database field mappings using conf data."""
+        """Convert field selection to database field mappings using conf data only."""
         mappings = {}
         
-        # If we have config_dict, get field mappings from it
-        if self.config_dict:
-            service_config = self.config_dict.get('OpenWeatherService', {})
-            field_mappings = service_config.get('field_mappings', {})
+        if not self.config_dict:
+            log.error("No configuration data available for field mappings")
+            return mappings
             
-            # Extract database fields from conf mappings
-            for module_name, field_list in selected_fields.items():
-                if isinstance(field_list, list):
-                    module_mappings = field_mappings.get(module_name, {})
-                    for service_field in field_list:
-                        field_mapping = module_mappings.get(service_field, {})
-                        if isinstance(field_mapping, dict):
-                            db_field = field_mapping.get('database_field', f'ow_{service_field}')
-                            db_type = field_mapping.get('database_type', 'REAL')
-                            mappings[db_field] = db_type
+        service_config = self.config_dict.get('OpenWeatherService', {})
+        if not service_config:
+            log.error("No OpenWeatherService configuration found")
+            return mappings
+            
+        field_mappings = service_config.get('field_mappings', {})
+        if not field_mappings:
+            log.error("No field_mappings found in service configuration")
+            return mappings
         
-        # Fallback: generate basic mappings
-        if not mappings:
-            for module_name, field_list in selected_fields.items():
-                if isinstance(field_list, list):
-                    for service_field in field_list:
-                        db_field = f'ow_{service_field}'
-                        # Determine type based on field name
-                        if any(text_field in service_field for text_field in ['weather_main', 'weather_description', 'weather_icon']):
-                            mappings[db_field] = 'VARCHAR(50)'
-                        elif 'aqi' in service_field:
-                            mappings[db_field] = 'INTEGER'
-                        else:
-                            mappings[db_field] = 'REAL'
+        # Extract database fields from conf mappings - NO FALLBACKS
+        for module_name, field_list in selected_fields.items():
+            if isinstance(field_list, list):
+                module_mappings = field_mappings.get(module_name, {})
+                if not module_mappings:
+                    log.error(f"No field mappings found for module '{module_name}'")
+                    continue
+                    
+                for service_field in field_list:
+                    field_mapping = module_mappings.get(service_field, {})
+                    if not isinstance(field_mapping, dict):
+                        log.error(f"Invalid field mapping for {module_name}.{service_field}: {field_mapping}")
+                        continue
+                        
+                    db_field = field_mapping.get('database_field')
+                    db_type = field_mapping.get('database_type')
+                    
+                    if not db_field:
+                        log.error(f"No database_field defined for {module_name}.{service_field}")
+                        continue
+                        
+                    if not db_type:
+                        log.error(f"No database_type defined for {module_name}.{service_field}")
+                        continue
+                        
+                    mappings[db_field] = db_type
         
         return mappings
 
     def _map_service_to_database_field(self, service_field, module_name):
-        """Map service field name to database field name using CONF data (not YAML)."""
+        """Map service field name to database field name using CONF data only."""
         try:
             if not self.config_dict:
-                return f'ow_{service_field}'  # Fallback
-            
+                log.error(f"No configuration data available for field mapping: {service_field}")
+                return None
+                
             service_config = self.config_dict.get('OpenWeatherService', {})
+            if not service_config:
+                log.error(f"No OpenWeatherService configuration found for field mapping: {service_field}")
+                return None
+                
             field_mappings = service_config.get('field_mappings', {})
+            if not field_mappings:
+                log.error(f"No field_mappings found in configuration for field: {service_field}")
+                return None
+                
             module_mappings = field_mappings.get(module_name, {})
-            
+            if not module_mappings:
+                log.error(f"No field mappings found for module '{module_name}' and field '{service_field}'")
+                return None
+                
             field_mapping = module_mappings.get(service_field, {})
-            if isinstance(field_mapping, dict):
-                return field_mapping.get('database_field', f'ow_{service_field}')
-            
-            # Fallback to standard naming
-            return f'ow_{service_field}'
+            if not isinstance(field_mapping, dict):
+                log.error(f"Invalid field mapping for {module_name}.{service_field}: {field_mapping}")
+                return None
+                
+            database_field = field_mapping.get('database_field')
+            if not database_field:
+                log.error(f"No database_field defined for {module_name}.{service_field}")
+                return None
+                
+            return database_field
             
         except Exception as e:
             log.error(f"Error mapping service field {service_field}: {e}")
-            return f'ow_{service_field}'
+            return None
 
 
 class OpenWeatherAPIError(Exception):
@@ -604,7 +632,7 @@ class OpenWeatherService(StdService):
             return 'current_weather'  # Default
         
     def _validate_module_fields(self, module, fields, expected_fields, existing_db_fields, field_manager):
-        """Validate fields for a specific module - never fails."""
+        """Validate fields for a specific module - fails when configuration is missing."""
         active_fields = []
         
         if not fields:
@@ -617,8 +645,8 @@ class OpenWeatherService(StdService):
                 # Find the database field name for this logical field
                 db_field = self._get_database_field_name(module, field, field_manager)
                 
-                if not db_field:
-                    log.warning(f"Unknown field '{field}' in module '{module}' - skipping")
+                if db_field is None:
+                    log.error(f"Cannot map field '{field}' in module '{module}' - configuration missing")
                     continue
                 
                 if db_field not in existing_db_fields:
@@ -643,8 +671,10 @@ class OpenWeatherService(StdService):
     def _get_database_field_name(self, module, field, field_manager):
         """Get database field name for a logical field name using CONF data."""
         try:
-            # Use the field manager's method that reads from CONF
-            return field_manager._map_service_to_database_field(field, module)
+            db_field = field_manager._map_service_to_database_field(field, module)
+            if db_field is None:
+                log.error(f"Failed to map {module}.{field} - no configuration data")
+            return db_field
         except Exception as e:
             log.error(f"Error looking up database field for {module}.{field}: {e}")
             return None
