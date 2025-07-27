@@ -130,7 +130,7 @@ class OpenWeatherAPIError(Exception):
 
 
 class OpenWeatherDataCollector:
-    """Enhanced data collector with field selection support."""
+    """API client for OpenWeather data collection with field selection support."""
     
     def __init__(self, api_key, timeout=30, selected_fields=None, config_dict=None):
         self.api_key = api_key
@@ -138,74 +138,155 @@ class OpenWeatherDataCollector:
         self.selected_fields = selected_fields or {}
         self.config_dict = config_dict
         
-        self.required_apis = self._determine_required_apis()
-        
         self.base_urls = {
             'current_weather': 'http://api.openweathermap.org/data/2.5/weather',
             'air_quality': 'http://api.openweathermap.org/data/2.5/air_pollution'
         }
 
-    def _determine_required_apis(self):
-        """Determine which FREE APIs are needed based on selected fields using config data."""
-        required = set()
+    def collect_current_weather(self, latitude, longitude):
+        """Collect current weather data from OpenWeather API."""
+        if not self.api_key:
+            raise OpenWeatherAPIError("No API key configured")
         
-        if not self.config_dict:
-            log.error("No config_dict available for API determination")
-            return required
+        url = f"{self.base_urls['current_weather']}?lat={latitude}&lon={longitude}&appid={self.api_key}&units=metric"
         
-        service_config = self.config_dict.get('OpenWeatherService', {})
-        field_mappings = service_config.get('field_mappings', {})
-        
-        if not field_mappings:
-            log.error("No field_mappings found in configuration")
-            return required
-        
-        for module_name, field_list in self.selected_fields.items():
-            if not isinstance(field_list, list):
-                continue
+        try:
+            with urllib.request.urlopen(url, timeout=self.timeout) as response:
+                if response.getcode() != 200:
+                    raise OpenWeatherAPIError(f"API returned status {response.getcode()}")
                 
-            module_mappings = field_mappings.get(module_name, {})
-            if not module_mappings:
-                continue
+                data = json.loads(response.read().decode('utf-8'))
+                return self._extract_weather_data(data)
                 
-            for service_field in field_list:
-                field_mapping = module_mappings.get(service_field, {})
-                if not isinstance(field_mapping, dict):
-                    continue
-                    
-                api_path = field_mapping.get('api_path', '')
-                if not api_path:
-                    continue
-                    
-                if api_path.startswith('main.') or api_path.startswith('weather[') or api_path.startswith('wind.') or api_path.startswith('clouds.') or api_path.startswith('visibility') or api_path.startswith('rain.') or api_path.startswith('snow.'):
-                    required.add('current_weather')
-                elif api_path.startswith('list[0].components.') or api_path.startswith('list[0].main.'):
-                    required.add('air_quality')
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise OpenWeatherAPIError("Invalid API key")
+            elif e.code == 404:
+                raise OpenWeatherAPIError("Location not found")
+            else:
+                raise OpenWeatherAPIError(f"HTTP error {e.code}: {e.reason}")
+        except urllib.error.URLError as e:
+            raise OpenWeatherAPIError(f"Network error: {e.reason}")
+        except socket.timeout:
+            raise OpenWeatherAPIError("Request timeout")
+        except json.JSONDecodeError as e:
+            raise OpenWeatherAPIError(f"Invalid JSON response: {e}")
+
+    def collect_air_quality(self, latitude, longitude):
+        """Collect air quality data from OpenWeather API."""
+        if not self.api_key:
+            raise OpenWeatherAPIError("No API key configured")
         
-        return required
-    
+        url = f"{self.base_urls['air_quality']}?lat={latitude}&lon={longitude}&appid={self.api_key}"
+        
+        try:
+            with urllib.request.urlopen(url, timeout=self.timeout) as response:
+                if response.getcode() != 200:
+                    raise OpenWeatherAPIError(f"API returned status {response.getcode()}")
+                
+                data = json.loads(response.read().decode('utf-8'))
+                return self._extract_air_quality_data(data)
+                
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise OpenWeatherAPIError("Invalid API key")
+            elif e.code == 404:
+                raise OpenWeatherAPIError("Location not found")
+            else:
+                raise OpenWeatherAPIError(f"HTTP error {e.code}: {e.reason}")
+        except urllib.error.URLError as e:
+            raise OpenWeatherAPIError(f"Network error: {e.reason}")
+        except socket.timeout:
+            raise OpenWeatherAPIError("Request timeout")
+        except json.JSONDecodeError as e:
+            raise OpenWeatherAPIError(f"Invalid JSON response: {e}")
+
     def collect_all_data(self, latitude, longitude):
-        """Collect data from all required FREE APIs and combine results."""
+        """Collect data from all required APIs based on selected fields."""
         all_data = {}
         
-        # Current Weather API
-        if 'current_weather' in self.required_apis:
+        if self.selected_fields.get('current_weather'):
             try:
-                weather_data = self._collect_current_weather(latitude, longitude)
-                all_data.update(weather_data)
+                weather_data = self.collect_current_weather(latitude, longitude)
+                if weather_data:
+                    all_data.update(weather_data)
             except Exception as e:
                 log.error(f"Current weather collection failed: {e}")
         
-        # Air Quality API  
-        if 'air_quality' in self.required_apis:
+        if self.selected_fields.get('air_quality'):
             try:
-                air_data = self._collect_air_quality(latitude, longitude)
-                all_data.update(air_data)
+                air_data = self.collect_air_quality(latitude, longitude)
+                if air_data:
+                    all_data.update(air_data)
             except Exception as e:
                 log.error(f"Air quality collection failed: {e}")
         
         return all_data
-    
+
+    def _extract_weather_data(self, data):
+        """Extract weather data from API response using field mappings."""
+        extracted = {}
+        
+        if not self.config_dict:
+            return extracted
+        
+        service_config = self.config_dict.get('OpenWeatherService', {})
+        field_mappings = service_config.get('field_mappings', {})
+        current_weather_mappings = field_mappings.get('current_weather', {})
+        
+        for service_field in self.selected_fields.get('current_weather', []):
+            field_mapping = current_weather_mappings.get(service_field, {})
+            if not isinstance(field_mapping, dict):
+                continue
+                
+            api_path = field_mapping.get('api_path', '')
+            db_field = field_mapping.get('database_field', f'ow_{service_field}')
+            
+            if api_path:
+                try:
+                    value = self._extract_value_from_path(data, api_path)
+                    if value is not None:
+                        extracted[db_field] = value
+                except (KeyError, IndexError, TypeError):
+                    continue
+        
+        if extracted:
+            extracted['ow_weather_timestamp'] = time.time()
+        
+        return extracted
+
+    def _extract_air_quality_data(self, data):
+        """Extract air quality data from API response using field mappings."""
+        extracted = {}
+        
+        if not self.config_dict:
+            return extracted
+        
+        service_config = self.config_dict.get('OpenWeatherService', {})
+        field_mappings = service_config.get('field_mappings', {})
+        air_quality_mappings = field_mappings.get('air_quality', {})
+        
+        for service_field in self.selected_fields.get('air_quality', []):
+            field_mapping = air_quality_mappings.get(service_field, {})
+            if not isinstance(field_mapping, dict):
+                continue
+                
+            api_path = field_mapping.get('api_path', '')
+            db_field = field_mapping.get('database_field', f'ow_{service_field}')
+            
+            if api_path:
+                try:
+                    value = self._extract_value_from_path(data, api_path)
+                    if value is not None:
+                        extracted[db_field] = value
+                except (KeyError, IndexError, TypeError):
+                    continue
+        
+        if extracted:
+            extracted['ow_air_quality_timestamp'] = time.time()
+        
+        return extracted
+
     def _extract_value_from_path(self, data, path):
         """Extract value from API response using dot notation path."""
         parts = path.split('.')
@@ -213,7 +294,6 @@ class OpenWeatherDataCollector:
         
         for part in parts:
             if '[' in part and ']' in part:
-                # Handle array access like "list[0]"
                 key = part.split('[')[0]
                 index = int(part.split('[')[1].split(']')[0])
                 current = current[key][index]
@@ -222,47 +302,8 @@ class OpenWeatherDataCollector:
         
         return current
 
-    def _validate_field_selection(self):
-        """Validate that selected fields have proper configuration data."""
-        if not self.config_dict:
-            return False
-            
-        service_config = self.config_dict.get('OpenWeatherService', {})
-        field_mappings = service_config.get('field_mappings', {})
-        
-        if not field_mappings:
-            log.error("No field mappings found in configuration")
-            return False
-        
-        valid_count = 0
-        total_count = 0
-        
-        for module_name, field_list in self.selected_fields.items():
-            if not isinstance(field_list, list):
-                continue
-                
-            module_mappings = field_mappings.get(module_name, {})
-            
-            for service_field in field_list:
-                total_count += 1
-                field_mapping = module_mappings.get(service_field, {})
-                
-                if isinstance(field_mapping, dict) and field_mapping.get('api_path'):
-                    valid_count += 1
-                else:
-                    log.warning(f"Invalid or missing field mapping for {module_name}.{service_field}")
-        
-        if valid_count == 0:
-            log.error("No valid field mappings found")
-            return False
-        elif valid_count < total_count:
-            log.warning(f"Only {valid_count}/{total_count} fields have valid configuration")
-        
-        return True
-
-
 class OpenWeatherBackgroundThread(threading.Thread):
-    """Enhanced background thread with field selection support."""
+    """Background scheduler for periodic OpenWeather data collection."""
     
     def __init__(self, config, selected_fields, config_dict=None):
         super(OpenWeatherBackgroundThread, self).__init__(name='OpenWeatherBackgroundThread')
@@ -299,34 +340,31 @@ class OpenWeatherBackgroundThread(threading.Thread):
         log.info(f"OpenWeather background thread initialized for location: {self.latitude}, {self.longitude}")
     
     def run(self):
-        """Main background thread loop."""
+        """Main background thread loop - coordinates data collection."""
         log.info("OpenWeather background thread started")
         
         while self.running:
             try:
                 current_time = time.time()
                 
-                # Check if current weather collection is due
                 if ('current_weather' in self.selected_fields and 
                     current_time - self.last_collection['current_weather'] >= self.intervals['current_weather']):
                     self._collect_current_weather()
                     self.last_collection['current_weather'] = current_time
                 
-                # Check if air quality collection is due
                 if ('air_quality' in self.selected_fields and 
                     current_time - self.last_collection['air_quality'] >= self.intervals['air_quality']):
                     self._collect_air_quality()
                     self.last_collection['air_quality'] = current_time
                 
-                # Sleep for 60 seconds before next check
                 time.sleep(60)
                 
             except Exception as e:
                 log.error(f"Error in OpenWeather background thread: {e}")
-                time.sleep(300)  # Sleep longer on error
+                time.sleep(300)
     
     def _collect_current_weather(self):
-        """Collect current weather data."""
+        """Coordinate current weather collection - delegates to collector."""
         try:
             weather_data = self.collector.collect_current_weather(self.latitude, self.longitude)
             
@@ -334,24 +372,21 @@ class OpenWeatherBackgroundThread(threading.Thread):
                 with self.data_lock:
                     self.latest_data.update(weather_data)
                 
-                # FIX: Convert string boolean to actual boolean
                 log_success = str(self.config.get('log_success', 'false')).lower() in ('true', 'yes', '1')
                 if log_success:
                     log.info(f"Collected current weather data: {len(weather_data)} fields")
             
         except OpenWeatherAPIError as e:
-            # FIX: Convert string boolean to actual boolean
             log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
             if log_errors:
                 log.error(f"OpenWeather API error collecting weather data: {e}")
         except Exception as e:
-            # FIX: Convert string boolean to actual boolean
             log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
             if log_errors:
                 log.error(f"Unexpected error collecting weather data: {e}")
     
     def _collect_air_quality(self):
-        """Collect air quality data."""
+        """Coordinate air quality collection - delegates to collector."""
         try:
             air_quality_data = self.collector.collect_air_quality(self.latitude, self.longitude)
             
@@ -359,18 +394,15 @@ class OpenWeatherBackgroundThread(threading.Thread):
                 with self.data_lock:
                     self.latest_data.update(air_quality_data)
                 
-                # FIX: Convert string boolean to actual boolean
                 log_success = str(self.config.get('log_success', 'false')).lower() in ('true', 'yes', '1')
                 if log_success:
                     log.info(f"Collected air quality data: {len(air_quality_data)} fields")
             
         except OpenWeatherAPIError as e:
-            # FIX: Convert string boolean to actual boolean
             log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
             if log_errors:
                 log.error(f"OpenWeather API error collecting air quality data: {e}")
         except Exception as e:
-            # FIX: Convert string boolean to actual boolean
             log_errors = str(self.config.get('log_errors', 'true')).lower() in ('true', 'yes', '1')
             if log_errors:
                 log.error(f"Unexpected error collecting air quality data: {e}")
