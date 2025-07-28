@@ -562,10 +562,6 @@ python3 bin/user/openweather.py --test-fields
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
-## 📄 License
-
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
-
 Copyright (C) 2025 Shane Burkhardt - [GitHub Profile](https://github.com/inguy24)
 
 ## 🙏 Acknowledgments
