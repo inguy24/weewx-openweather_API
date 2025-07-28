@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Anteater
+# Magic Animal: Aardvark
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -304,6 +304,7 @@ class OpenWeatherDataCollector:
         
         return current
 
+
 class OpenWeatherBackgroundThread(threading.Thread):
     """Background scheduler for periodic OpenWeather data collection."""
     
@@ -311,6 +312,14 @@ class OpenWeatherBackgroundThread(threading.Thread):
         super(OpenWeatherBackgroundThread, self).__init__(name='OpenWeatherBackgroundThread')
         self.daemon = True
         
+        # DEBUG: Check what config_dict we received - *DELETE*
+        log.error(f"DEBUG: BackgroundThread received config_dict type: {type(config_dict)}")
+        log.error(f"DEBUG: BackgroundThread config_dict is None: {config_dict is None}")
+        if config_dict:
+            log.error(f"DEBUG: BackgroundThread config_dict has Station: {'Station' in config_dict}")
+        else:
+            log.error("DEBUG: BackgroundThread received None config_dict!")
+
         self.config = config
         self.selected_fields = selected_fields
         self.running = True
@@ -430,6 +439,15 @@ class OpenWeatherService(StdService):
         
         self.engine = engine
         self.config_dict = config_dict
+
+        # DEBUG: Check what we received - *DELETE*
+        log.error(f"DEBUG: config_dict type: {type(config_dict)}")
+        log.error(f"DEBUG: config_dict is None: {config_dict is None}")
+        if config_dict:
+            log.error(f"DEBUG: config_dict keys: {list(config_dict.keys())}")
+            log.error(f"DEBUG: Station section exists: {'Station' in config_dict}")
+        else:
+            log.error("DEBUG: config_dict is None or empty!")
         
         # Get OpenWeather configuration
         self.service_config = config_dict.get('OpenWeatherService', {})
@@ -454,7 +472,14 @@ class OpenWeatherService(StdService):
             log.error("OpenWeather service disabled - no usable fields available")
             log.error("HINT: Run 'weectl extension reconfigure OpenWeather' to fix configuration")
             return
-        
+
+        # DEBUG: Check config_dict just before calling _initialize_data_collection() - *DELETE*    
+        log.error(f"DEBUG: About to call _initialize_data_collection()")
+        log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
+        log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
+        if self.config_dict:
+            log.error(f"DEBUG: self.config_dict has Station: {'Station' in self.config_dict}")
+
         # Continue with existing initialization logic...
         self._initialize_data_collection()
         self._setup_unit_system()
