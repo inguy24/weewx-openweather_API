@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Hippo
+# Magic Animal: Pygmy Hippo
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -7,7 +7,7 @@ WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in 
 Provides modular OpenWeatherMap API integration with user-selectable fields
 and dynamic database schema management.
 
-Copyright (C) 2025 WeeWX OpenWeather API Extension
+Copyright (C) 2025 Shane Burkhardt
 """
 
 import json
