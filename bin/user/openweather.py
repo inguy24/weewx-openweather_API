@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Giraffe
+# Magic Animal: Colobus Monkey
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -491,45 +491,45 @@ class OpenWeatherService(StdService):
 
     def _initialize_data_collection(self):
         """Initialize data collection components - graceful failure."""
-        try:
+        # try:  # COMMENTED OUT FOR TESTING
 
-            # ADD DEBUG BEFORE OpenWeatherDataCollector creation - *DELETE*
-            log.error(f"DEBUG: Before creating OpenWeatherDataCollector")
-            log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
-            log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
+        # ADD DEBUG BEFORE OpenWeatherDataCollector creation
+        log.error(f"DEBUG: Before creating OpenWeatherDataCollector")
+        log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
+        log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
 
-            self.api_client = OpenWeatherDataCollector(
-                api_key=self.service_config['api_key'],
-                selected_fields=self.active_fields,
-                timeout=int(self.service_config.get('timeout', 30)),
-                config_dict=self.config_dict
-            )
-            
-            # ADD DEBUG AFTER OpenWeatherDataCollector creation - *DELETE*
-            log.error(f"DEBUG: After creating OpenWeatherDataCollector")
-            log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
-            log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
+        self.api_client = OpenWeatherDataCollector(
+            api_key=self.service_config['api_key'],
+            selected_fields=self.active_fields,
+            timeout=int(self.service_config.get('timeout', 30)),
+            config_dict=self.config_dict
+        )
+        
+        # ADD DEBUG AFTER OpenWeatherDataCollector creation
+        log.error(f"DEBUG: After creating OpenWeatherDataCollector")
+        log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
+        log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
 
-            # ADD DEBUG BEFORE OpenWeatherBackgroundThread creation - *DELETE*
-            log.error(f"DEBUG: Before creating OpenWeatherBackgroundThread")
-            log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
-            log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
+        # ADD DEBUG BEFORE OpenWeatherBackgroundThread creation
+        log.error(f"DEBUG: Before creating OpenWeatherBackgroundThread")
+        log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
+        log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
 
-            self.background_thread = OpenWeatherBackgroundThread(
-                config=self.service_config,
-                selected_fields=self.active_fields,
-                config_dict=self.config_dict
-            )
-            
-            self.background_thread.start()
-            
-            log.info("Data collection initialized successfully")
-            self.service_enabled = True
-            
-        except Exception as e:
-            log.error(f"Failed to initialize data collection: {e}")
-            log.error("OpenWeather data collection disabled")
-            self.service_enabled = False
+        self.background_thread = OpenWeatherBackgroundThread(
+            config=self.service_config,
+            selected_fields=self.active_fields,
+            config_dict=self.config_dict
+        )
+        
+        self.background_thread.start()
+        
+        log.info("Data collection initialized successfully")
+        self.service_enabled = True
+        
+        # except Exception as e:  # COMMENTED OUT FOR TESTING
+        #     log.error(f"Failed to initialize data collection: {e}")
+        #     log.error("OpenWeather data collection disabled")
+        #     self.service_enabled = False
 
     def _validate_basic_config(self):
         """Basic configuration validation - keep existing logic."""
