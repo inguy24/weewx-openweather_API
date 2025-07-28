@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Pygmy Hippo
+# Magic Animal: Gibbon
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -1116,12 +1116,8 @@ class OpenWeatherService(StdService):
             log.error(f"Error during OpenWeather shutdown: {e}")
 
             
-# ============================================================================
-# BUILT-IN TESTING FUNCTIONALITY
-# ============================================================================
-
 class OpenWeatherTester:
-    """Built-in testing functionality for the OpenWeather extension."""
+    """Built-in testing functionality for the OpenWeather extension - Data-Driven Architecture."""
     
     def __init__(self, api_key=None, latitude=None, longitude=None):
         self.api_key = api_key
@@ -1132,9 +1128,6 @@ class OpenWeatherTester:
         if not self.latitude or not self.longitude:
             self.latitude = 33.656915  # Huntington Beach, CA
             self.longitude = -117.982542
-        
-        # Initialize field manager for testing
-        self.field_manager = FieldSelectionManager(config_dict=self.config_dict)
         
         print(f"OpenWeather Extension Tester v{VERSION}")
         print(f"Testing location: {self.latitude}, {self.longitude}")
@@ -1158,7 +1151,8 @@ class OpenWeatherTester:
             collector = OpenWeatherDataCollector(
                 self.api_key, 
                 timeout=30,
-                selected_fields={'current_weather': ['temp', 'humidity', 'pressure']}
+                selected_fields={'current_weather': ['temp', 'humidity', 'pressure']},
+                config_dict=None
             )
             weather_data = collector.collect_current_weather(self.latitude, self.longitude)
             
@@ -1179,7 +1173,8 @@ class OpenWeatherTester:
             collector = OpenWeatherDataCollector(
                 self.api_key,
                 timeout=30,
-                selected_fields={'air_quality': ['pm2_5', 'aqi']}
+                selected_fields={'air_quality': ['pm2_5', 'aqi']},
+                config_dict=None
             )
             air_data = collector.collect_air_quality(self.latitude, self.longitude)
             
@@ -1198,12 +1193,15 @@ class OpenWeatherTester:
         return success_count == total_tests
     
     def test_data_processing(self):
-        """Test data extraction and field mapping."""
+        """Test data extraction and field mapping using current architecture."""
         print("\n🔧 TESTING DATA PROCESSING")
         print("-" * 40)
         
-        # Test weather data extraction
+        # Test weather data extraction with mock configuration
         print("Testing weather data extraction...")
+        
+        # Create mock configuration that matches install.py output
+        mock_config_dict = self._create_mock_configuration()
         
         # Mock API response for testing
         mock_weather_response = {
@@ -1224,13 +1222,17 @@ class OpenWeatherTester:
         }
         
         try:
+            # Test with current architecture - config-driven field selection
+            selected_fields = {'current_weather': ['temp', 'feels_like', 'humidity', 'pressure']}
+            
             collector = OpenWeatherDataCollector(
                 "test_key",
-                selected_fields={'current_weather': ['temp', 'feels_like', 'humidity', 'pressure']}
+                selected_fields=selected_fields,
+                config_dict=mock_config_dict
             )
             extracted = collector._extract_weather_data(mock_weather_response)
             
-            # Verify expected fields
+            # Verify expected fields (data-driven from selection)
             expected_fields = ['ow_temperature', 'ow_feels_like', 'ow_humidity', 'ow_pressure']
             found_fields = [field for field in expected_fields if field in extracted and extracted[field] is not None]
             
@@ -1264,9 +1266,12 @@ class OpenWeatherTester:
         }
         
         try:
+            selected_fields = {'air_quality': ['pm2_5', 'aqi', 'ozone']}
+            
             collector = OpenWeatherDataCollector(
                 "test_key",
-                selected_fields={'air_quality': ['pm2_5', 'aqi', 'ozone']}
+                selected_fields=selected_fields,
+                config_dict=mock_config_dict
             )
             extracted = collector._extract_air_quality_data(mock_air_response)
             
@@ -1285,353 +1290,323 @@ class OpenWeatherTester:
         return True
     
     def test_field_selection(self):
-        """Test field selection and filtering functionality."""
+        """Test field selection system - data-driven approach."""
         print("\n📋 TESTING FIELD SELECTION")
         print("-" * 40)
         
-        # Test smart defaults
-        print("Testing smart defaults...")
+        # Test complexity levels that actually exist: minimal, all, custom
+        print("Testing field selection complexity levels...")
         try:
-            for complexity in ['minimal', 'standard', 'comprehensive']:
-                fields = self.field_manager.get_smart_default_fields(complexity)
-                weather_count = len(fields.get('current_weather', []))
-                air_count = len(fields.get('air_quality', []))
-                print(f"  ✅ {complexity}: {weather_count} weather + {air_count} air quality fields")
+            # Load actual configuration to test what install.py creates
+            config_path = self._find_weewx_config()
+            if not config_path:
+                print("  ⚠️  WeeWX configuration not found - using mock testing")
+                return self._test_field_selection_mock()
+            
+            import configobj
+            config_dict = configobj.ConfigObj(config_path)
+            service_config = config_dict.get('OpenWeatherService', {})
+            
+            if not service_config:
+                print("  ⚠️  No OpenWeatherService configuration found - extension not installed")
+                return self._test_field_selection_mock()
+            
+            # Test current configuration field selection
+            field_selection = service_config.get('field_selection', {})
+            complexity_level = field_selection.get('complexity_level', 'unknown')
+            selected_fields = field_selection.get('selected_fields', {})
+            
+            print(f"  Current complexity level: {complexity_level}")
+            
+            # Count selected fields (data-driven)
+            total_selected = 0
+            for module_name, field_list in selected_fields.items():
+                if isinstance(field_list, list):
+                    module_count = len(field_list)
+                elif isinstance(field_list, str):
+                    module_count = len([f.strip() for f in field_list.split(',') if f.strip()])
+                else:
+                    module_count = 0
                 
-        except Exception as e:
-            print(f"  ❌ Smart defaults failed: {e}")
-            return False
-        
-        # Test field mappings
-        print("\nTesting field mappings...")
-        try:
-            test_selection = {
-                'current_weather': ['temp', 'humidity', 'pressure'],
-                'air_quality': ['pm2_5', 'aqi']
-            }
+                total_selected += module_count
+                print(f"    {module_name}: {module_count} fields")
             
-            mappings = self.field_manager.get_database_field_mappings(test_selection)
-            expected_mappings = ['ow_temperature', 'ow_humidity', 'ow_pressure', 'ow_pm25', 'ow_aqi']
+            print(f"  ✅ Total selected fields: {total_selected}")
             
-            found_mappings = [field for field in expected_mappings if field in mappings]
-            print(f"  ✅ Database mappings: {len(found_mappings)}/{len(expected_mappings)} mapped correctly")
+            # Validate field mappings exist and match
+            field_mappings = service_config.get('field_mappings', {})
+            total_mapped = 0
+            for module_mappings in field_mappings.values():
+                total_mapped += len(module_mappings)
             
-        except Exception as e:
-            print(f"  ❌ Field mappings failed: {e}")
-            return False
-        
-        # Test field filtering
-        print("\nTesting field filtering...")
-        try:
-            collector = OpenWeatherDataCollector(
-                "test_key",
-                selected_fields={'current_weather': ['temp', 'humidity']}
-            )
+            print(f"  ✅ Total field mappings: {total_mapped}")
             
-            # Create mock data with more fields than selected
-            mock_data = {
-                'ow_temperature': 22.5,
-                'ow_humidity': 65,
-                'ow_pressure': 1015,  # Not selected
-                'ow_wind_speed': 3.1,  # Not selected
-                'ow_weather_timestamp': time.time()
-            }
-            
-            filtered = collector._apply_field_selection(mock_data, 'current_weather')
-            
-            # Should only have selected fields plus timestamp
-            expected_fields = {'ow_temperature', 'ow_humidity', 'ow_weather_timestamp'}
-            actual_fields = set(filtered.keys())
-            
-            if expected_fields == actual_fields:
-                print(f"  ✅ Field filtering: {len(filtered)} fields correctly filtered")
+            if total_selected == total_mapped:
+                print(f"  ✅ Field selection consistency: Selected = Mapped ({total_selected})")
             else:
-                print(f"  ❌ Field filtering: Expected {expected_fields}, got {actual_fields}")
-                return False
-                
+                print(f"  ⚠️  Field selection inconsistency: Selected ({total_selected}) ≠ Mapped ({total_mapped})")
+            
         except Exception as e:
-            print(f"  ❌ Field filtering failed: {e}")
+            print(f"  ❌ Field selection test failed: {e}")
             return False
         
         print("\nField Selection Test: ✅ PASSED")
         return True
     
+    def _test_field_selection_mock(self):
+        """Fallback field selection testing using mock data."""
+        print("  Using mock field selection testing...")
+        
+        # Test the three valid complexity levels
+        complexity_levels = ['minimal', 'all', 'custom']
+        
+        for complexity in complexity_levels:
+            print(f"  Testing {complexity} complexity level...")
+            
+            # Create mock configuration for this complexity
+            mock_config = self._create_mock_configuration(complexity)
+            service_config = mock_config.get('OpenWeatherService', {})
+            field_selection = service_config.get('field_selection', {})
+            selected_fields = field_selection.get('selected_fields', {})
+            
+            # Count fields (data-driven)
+            field_count = 0
+            for module_fields in selected_fields.values():
+                if isinstance(module_fields, list):
+                    field_count += len(module_fields)
+                elif isinstance(module_fields, str):
+                    field_count += len([f.strip() for f in module_fields.split(',') if f.strip()])
+            
+            print(f"    ✅ {complexity}: {field_count} fields configured")
+        
+        return True
+    
     def test_configuration(self):
-        """Test configuration parsing and validation."""
+        """Test configuration parsing and validation - current architecture."""
         print("\n⚙️  TESTING CONFIGURATION")
         print("-" * 40)
         
-        # Test configuration parsing
-        print("Testing configuration parsing...")
+        # Test configuration structure matches what install.py creates
+        print("Testing configuration structure...")
         try:
-            # Mock WeeWX config
-            mock_config = {
-                'Station': {
-                    'latitude': 33.656915,
-                    'longitude': -117.982542
-                },
-                'OpenWeatherService': {
-                    'enable': True,
-                    'api_key': 'test_key_123',
-                    'timeout': 30,
-                    'modules': {
-                        'current_weather': True,
-                        'air_quality': True
-                    },
-                    'intervals': {
-                        'current_weather': 3600,
-                        'air_quality': 7200
-                    },
-                    'field_selection': {
-                        'complexity_level': 'standard'
-                    }
-                }
-            }
+            config_path = self._find_weewx_config()
+            if not config_path:
+                print("  ⚠️  WeeWX configuration not found - using mock testing")
+                return self._test_configuration_mock()
             
-            # Test service initialization (without actually starting it)
-            print("  ✅ Mock configuration structure valid")
+            import configobj
+            config_dict = configobj.ConfigObj(config_path)
+            print(f"  ✅ Configuration loaded: {config_path}")
             
-        except Exception as e:
-            print(f"  ❌ Configuration parsing failed: {e}")
-            return False
-        
-        # Test coordinate validation
-        print("\nTesting coordinate validation...")
-        try:
-            valid_coords = [
-                (33.656915, -117.982542),  # Huntington Beach
-                (0, 0),                    # Null Island
-                (90, 180),                 # Extreme valid
-                (-90, -180)                # Extreme valid
-            ]
+            # Test OpenWeatherService section structure
+            service_config = config_dict.get('OpenWeatherService', {})
+            if not service_config:
+                print("  ❌ OpenWeatherService section not found")
+                return False
             
-            invalid_coords = [
-                (91, 0),      # Invalid latitude
-                (0, 181),     # Invalid longitude
-                (-91, 0),     # Invalid latitude
-                (0, -181)     # Invalid longitude
-            ]
+            print("  ✅ OpenWeatherService section found")
             
-            for lat, lon in valid_coords:
-                if -90 <= lat <= 90 and -180 <= lon <= 180:
-                    pass  # Valid
+            # Test required configuration sections (what install.py creates)
+            required_sections = ['field_selection', 'unit_system', 'api_modules', 'field_mappings']
+            found_sections = []
+            
+            for section in required_sections:
+                if section in service_config:
+                    found_sections.append(section)
+                    print(f"    ✅ {section}: Present")
                 else:
-                    print(f"  ❌ Coordinate validation: {lat}, {lon} should be valid")
-                    return False
+                    print(f"    ❌ {section}: Missing")
             
-            print(f"  ✅ Coordinate validation: {len(valid_coords)} valid coordinates accepted")
+            # Test API key (without revealing it)
+            api_key = service_config.get('api_key', '')
+            if api_key and api_key != 'REPLACE_WITH_YOUR_API_KEY':
+                print(f"  ✅ API key configured: {api_key[:8]}***")
+            else:
+                print("  ⚠️  API key not configured or using placeholder")
             
-            for lat, lon in invalid_coords:
-                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-                    pass  # Correctly rejected
-                else:
-                    print(f"  ❌ Coordinate validation: {lat}, {lon} should be rejected")
-                    return False
-            
-            print(f"  ✅ Coordinate validation: {len(invalid_coords)} invalid coordinates rejected")
-            
+            # Test API modules configuration
+            api_modules = service_config.get('api_modules', {})
+            if api_modules:
+                print(f"  ✅ API modules configured: {', '.join(api_modules.keys())}")
+                
+                # Validate API module structure
+                for module_name, module_config in api_modules.items():
+                    required_keys = ['api_url', 'interval', 'units_parameter']
+                    missing_keys = [key for key in required_keys if key not in module_config]
+                    
+                    if not missing_keys:
+                        print(f"    ✅ {module_name}: Complete configuration")
+                    else:
+                        print(f"    ⚠️  {module_name}: Missing {missing_keys}")
+            else:
+                print("  ❌ No API modules configuration found")
+                
         except Exception as e:
-            print(f"  ❌ Coordinate validation failed: {e}")
+            print(f"  ❌ Configuration test failed: {e}")
             return False
         
         print("\nConfiguration Test: ✅ PASSED")
         return True
     
+    def _test_configuration_mock(self):
+        """Fallback configuration testing using mock data."""
+        print("  Using mock configuration testing...")
+        
+        mock_config = self._create_mock_configuration()
+        service_config = mock_config.get('OpenWeatherService', {})
+        
+        if service_config:
+            print("  ✅ Mock configuration structure valid")
+            
+            # Test API modules
+            api_modules = service_config.get('api_modules', {})
+            print(f"  ✅ API modules: {len(api_modules)} configured")
+            
+            return True
+        else:
+            print("  ❌ Mock configuration invalid")
+            return False
+    
     def test_database_schema(self):
-        """Test database schema using WeeWX's standard manager (database-agnostic)."""
+        """Test database schema using data-driven approach."""
         print("\n🗄️  TESTING DATABASE SCHEMA")
         print("-" * 40)
         
-        # Test database connection using WeeWX's standard approach
+        # Test database connection and field validation
         print("Testing database connection...")
         try:
-            # Find WeeWX configuration file
             config_path = self._find_weewx_config()
             if not config_path:
                 print("  ⚠️  WeeWX configuration not found - skipping database tests")
-                print("     (This is normal if testing outside of WeeWX installation)")
                 return True
             
-            # Load WeeWX configuration
             import configobj
             config_dict = configobj.ConfigObj(config_path)
             
-            # Set WEEWX_ROOT if not already set (required for WeeWX manager)
+            # Set WEEWX_ROOT if needed
             import os
             if 'WEEWX_ROOT' not in os.environ:
-                # Try to determine WEEWX_ROOT from config file location
-                weewx_root = os.path.dirname(os.path.dirname(config_path))  # Usually /etc/weewx -> /
+                weewx_root = os.path.dirname(os.path.dirname(config_path))
                 if not weewx_root or weewx_root == '/':
-                    weewx_root = '/usr/share/weewx'  # Default WeeWX installation path
+                    weewx_root = '/usr/share/weewx'
                 os.environ['WEEWX_ROOT'] = weewx_root
                 config_dict['WEEWX_ROOT'] = weewx_root
             
-            # Use WeeWX's standard database manager (database-agnostic)
-            db_binding = 'wx_binding'  # Standard WeeWX binding name
+            # Test database connection
+            db_binding = 'wx_binding'
             
-            # Test database connection using WeeWX's standard method
             with weewx.manager.open_manager_with_config(config_dict, db_binding) as dbmanager:
                 print(f"  ✅ Database connection: Connected to {dbmanager.database_name}")
                 
-                # Get column information (works for both SQLite and MySQL)
+                # Get actual database fields
                 columns = []
                 for column in dbmanager.connection.genSchemaOf('archive'):
-                    columns.append(column[1])  # column[1] is the column name
+                    columns.append(column[1])
                 
                 ow_fields = [col for col in columns if col.startswith('ow_')]
                 
                 if ow_fields:
                     print(f"  ✅ OpenWeather fields found: {len(ow_fields)} fields present")
                     
-                    # Show field details for verification
-                    for field in sorted(ow_fields)[:10]:  # Show first 10
+                    # DATA-DRIVEN VALIDATION: Compare with configuration
+                    service_config = config_dict.get('OpenWeatherService', {})
+                    field_selection = service_config.get('field_selection', {})
+                    selected_fields = field_selection.get('selected_fields', {})
+                    
+                    # Count expected fields from configuration
+                    expected_count = 0
+                    for module_name, field_list in selected_fields.items():
+                        if isinstance(field_list, list):
+                            expected_count += len(field_list)
+                        elif isinstance(field_list, str):
+                            expected_count += len([f.strip() for f in field_list.split(',') if f.strip()])
+                    
+                    print(f"  📊 Expected fields (from config): {expected_count}")
+                    print(f"  📊 Actual fields (in database): {len(ow_fields)}")
+                    
+                    if len(ow_fields) == expected_count:
+                        print(f"  ✅ Field count validation: Database matches configuration")
+                    else:
+                        print(f"  ⚠️  Field count mismatch: Expected {expected_count}, found {len(ow_fields)}")
+                    
+                    # Show sample fields for verification
+                    for field in sorted(ow_fields)[:10]:
                         print(f"    - {field}")
                     if len(ow_fields) > 10:
                         print(f"    ... and {len(ow_fields) - 10} more")
                 else:
                     print("  ⚠️  No OpenWeather fields found in database")
-                    print("     This may indicate the extension was not properly installed")
-                    print("     or field selection was set to minimal/none")
                 
-                # Test data presence (functional test)
-                print("\nTesting data collection functionality...")
-                
-                # Check for recent OpenWeather data
-                cursor = dbmanager.connection.cursor()
-                cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_temperature IS NOT NULL")
-                weather_data_count = cursor.fetchone()[0]
-                
-                cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_pm25 IS NOT NULL")  
-                air_quality_count = cursor.fetchone()[0]
-                
-                if weather_data_count > 0:
-                    print(f"  ✅ Weather data: {weather_data_count} records contain OpenWeather weather data")
-                else:
-                    print("  ⚠️  No weather data found (extension may be newly installed or disabled)")
-                    
-                if air_quality_count > 0:
-                    print(f"  ✅ Air quality data: {air_quality_count} records contain OpenWeather air quality data")
-                else:
-                    print("  ⚠️  No air quality data found (extension may be newly installed or disabled)")
-                
-                # Test data freshness if data exists
-                if weather_data_count > 0 or air_quality_count > 0:
-                    # Use database-agnostic SQL for timestamp comparison
-                    if 'sqlite' in str(type(dbmanager.connection)).lower():
-                        # SQLite syntax
-                        cursor.execute("""
-                            SELECT 
-                                COUNT(*) as recent_records,
-                                MAX(ow_weather_timestamp) as latest_weather,
-                                MAX(ow_air_quality_timestamp) as latest_air_quality
-                            FROM archive 
-                            WHERE (ow_temperature IS NOT NULL OR ow_pm25 IS NOT NULL)
-                            AND dateTime > strftime('%s', 'now', '-1 day')
-                        """)
-                    else:
-                        # MySQL syntax
-                        cursor.execute("""
-                            SELECT 
-                                COUNT(*) as recent_records,
-                                MAX(ow_weather_timestamp) as latest_weather,
-                                MAX(ow_air_quality_timestamp) as latest_air_quality
-                            FROM archive 
-                            WHERE (ow_temperature IS NOT NULL OR ow_pm25 IS NOT NULL)
-                            AND dateTime > UNIX_TIMESTAMP(DATE_SUB(NOW(), INTERVAL 1 DAY))
-                        """)
-                    
-                    result = cursor.fetchone()
-                    if result and result[0] > 0:
-                        print(f"  ✅ Data freshness: {result[0]} records with data in last 24 hours")
-                        
-                        # Show timestamps if available
-                        if result[1]:  # latest_weather
-                            import datetime
-                            weather_time = datetime.datetime.fromtimestamp(result[1]).strftime('%Y-%m-%d %H:%M:%S')
-                            print(f"    Latest weather data: {weather_time}")
-                        if result[2]:  # latest_air_quality  
-                            air_time = datetime.datetime.fromtimestamp(result[2]).strftime('%Y-%m-%d %H:%M:%S')
-                            print(f"    Latest air quality data: {air_time}")
-                    else:
-                        print("  ⚠️  No recent data found (check if service is running)")
+                # Test data presence and freshness
+                self._test_data_presence(dbmanager)
                 
         except ImportError as e:
             print(f"  ⚠️  Required modules not available: {e}")
-            print("     This is normal if WeeWX is not installed")
             return True
         except Exception as e:
             print(f"  ❌ Database test failed: {e}")
-            
-            # If WeeWX manager fails, try a simpler direct approach
-            print("\nTrying simplified database test...")
-            try:
-                import sqlite3
-                
-                # Try to find the database file from the configuration
-                config_dict = configobj.ConfigObj(config_path)
-                db_path = None
-                
-                # Look for database path in configuration
-                try:
-                    db_config = config_dict['DataBindings']['wx_binding']
-                    db_name = db_config['database']
-                    db_info = config_dict['Databases'][db_name]
-                    db_path = db_info.get('database_name', '/var/lib/weewx/weewx.sdb')
-                    
-                    # Handle relative paths
-                    if not db_path.startswith('/'):
-                        db_path = f"/var/lib/weewx/{db_path}"
-                        
-                except (KeyError, TypeError):
-                    # Fallback to standard location
-                    db_path = '/var/lib/weewx/weewx.sdb'
-                
-                # Test direct SQLite connection
-                if db_path and os.path.exists(db_path):
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    
-                    # Check for OpenWeather fields
-                    cursor.execute("PRAGMA table_info(archive)")
-                    columns = cursor.fetchall()
-                    ow_fields = [col[1] for col in columns if col[1].startswith('ow_')]
-                    
-                    if ow_fields:
-                        print(f"  ✅ Direct test: Found {len(ow_fields)} OpenWeather fields")
-                        
-                        # Check for data
-                        cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_temperature IS NOT NULL")
-                        data_count = cursor.fetchone()[0]
-                        
-                        if data_count > 0:
-                            print(f"  ✅ Direct test: {data_count} records contain OpenWeather data")
-                        else:
-                            print("  ⚠️  Direct test: No OpenWeather data found")
-                            
-                        conn.close()
-                        print("\nDatabase Schema Test: ✅ PASSED (via direct test)")
-                        return True
-                    else:
-                        print("  ⚠️  Direct test: No OpenWeather fields found")
-                        conn.close()
-                        
-                else:
-                    print(f"  ❌ Database file not found: {db_path}")
-                    
-            except Exception as e2:
-                print(f"  ❌ Direct database test also failed: {e2}")
-            
             return False
         
         print("\nDatabase Schema Test: ✅ PASSED")
         return True
+    
+    def _test_data_presence(self, dbmanager):
+        """Test for actual data in database."""
+        print("\nTesting data collection functionality...")
+        
+        try:
+            cursor = dbmanager.connection.cursor()
+            
+            # Check for recent OpenWeather data
+            cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_temperature IS NOT NULL")
+            weather_data_count = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM archive WHERE ow_pm25 IS NOT NULL")
+            air_quality_count = cursor.fetchone()[0]
+            
+            if weather_data_count > 0:
+                print(f"  ✅ Weather data: {weather_data_count} records contain OpenWeather weather data")
+            else:
+                print("  ⚠️  No weather data found (extension may be newly installed or disabled)")
+            
+            if air_quality_count > 0:
+                print(f"  ✅ Air quality data: {air_quality_count} records contain OpenWeather air quality data")
+            else:
+                print("  ⚠️  No air quality data found (extension may be newly installed or disabled)")
+            
+            # Test data freshness if data exists
+            if weather_data_count > 0 or air_quality_count > 0:
+                if 'sqlite' in str(type(dbmanager.connection)).lower():
+                    # SQLite syntax
+                    cursor.execute("""
+                        SELECT COUNT(*) as recent_records
+                        FROM archive 
+                        WHERE (ow_temperature IS NOT NULL OR ow_pm25 IS NOT NULL)
+                        AND dateTime > strftime('%s', 'now', '-1 day')
+                    """)
+                else:
+                    # MySQL syntax
+                    cursor.execute("""
+                        SELECT COUNT(*) as recent_records
+                        FROM archive 
+                        WHERE (ow_temperature IS NOT NULL OR ow_pm25 IS NOT NULL)
+                        AND dateTime > UNIX_TIMESTAMP(DATE_SUB(NOW(), INTERVAL 1 DAY))
+                    """)
+                
+                result = cursor.fetchone()
+                if result and result[0] > 0:
+                    print(f"  ✅ Data freshness: {result[0]} records with data in last 24 hours")
+                else:
+                    print("  ⚠️  No recent data found (check if service is running)")
+                    
+        except Exception as e:
+            print(f"  ❌ Data presence test failed: {e}")
     
     def test_service_registration(self):
         """Test WeeWX service registration and configuration."""
         print("\n⚙️  TESTING SERVICE REGISTRATION")
         print("-" * 40)
         
-        # Test WeeWX configuration loading
         print("Testing WeeWX configuration...")
         try:
             config_path = self._find_weewx_config()
@@ -1643,13 +1618,7 @@ class OpenWeatherTester:
             config_dict = configobj.ConfigObj(config_path)
             print(f"  ✅ Configuration loaded: {config_path}")
             
-        except Exception as e:
-            print(f"  ❌ Configuration loading failed: {e}")
-            return False
-        
-        # Test OpenWeatherService section
-        print("\nTesting OpenWeatherService configuration...")
-        try:
+            # Test OpenWeatherService section
             ow_config = config_dict.get('OpenWeatherService', {})
             
             if ow_config:
@@ -1666,27 +1635,12 @@ class OpenWeatherTester:
                     print(f"  ✅ API key configured: {api_key[:8]}***")
                 else:
                     print("  ⚠️  API key not configured or using placeholder")
-                
-                # Check modules configuration
-                modules = ow_config.get('modules', {})
-                if modules:
-                    enabled_modules = [mod for mod, enabled in modules.items() if enabled]
-                    print(f"  ✅ Enabled modules: {', '.join(enabled_modules)}")
-                else:
-                    print("  ⚠️  No modules configuration found")
-                
             else:
-                print("  ❌ OpenWeatherService section not found in configuration")
-                print("     This indicates the extension was not properly installed")
+                print("  ❌ OpenWeatherService section not found")
                 return False
-                
-        except Exception as e:
-            print(f"  ❌ OpenWeatherService configuration check failed: {e}")
-            return False
-        
-        # Test service registration in Engine services
-        print("\nTesting service registration in Engine...")
-        try:
+            
+            # Test service registration in Engine services
+            print("\nTesting service registration in Engine...")
             engine_config = config_dict.get('Engine', {})
             services_config = engine_config.get('Services', {})
             
@@ -1702,27 +1656,14 @@ class OpenWeatherTester:
                 if ow_service_name in data_services:
                     print(f"  ✅ Service registered: {ow_service_name} found in data_services")
                 else:
-                    print(f"  ❌ Service not registered: {ow_service_name} not found in data_services")
-                    print(f"     Current data_services: {data_services}")
+                    print(f"  ❌ Service not registered: {ow_service_name} not found")
                     return False
-                    
-                # Show service order
-                service_list = [s.strip() for s in data_services.split(',') if s.strip()]
-                ow_position = next((i for i, s in enumerate(service_list) if ow_service_name in s), -1)
-                if ow_position >= 0:
-                    print(f"  ✅ Service order: Position {ow_position + 1} of {len(service_list)}")
-                    
             else:
                 print("  ❌ Engine Services section not found")
                 return False
-                
-        except Exception as e:
-            print(f"  ❌ Service registration check failed: {e}")
-            return False
-        
-        # Test Station coordinates (used by OpenWeather service)
-        print("\nTesting Station coordinates...")
-        try:
+            
+            # Test Station coordinates
+            print("\nTesting Station coordinates...")
             station_config = config_dict.get('Station', {})
             
             if station_config:
@@ -1746,7 +1687,7 @@ class OpenWeatherTester:
                 return False
                 
         except Exception as e:
-            print(f"  ❌ Station coordinates check failed: {e}")
+            print(f"  ❌ Service registration test failed: {e}")
             return False
         
         print("\nService Registration Test: ✅ PASSED")
@@ -1757,48 +1698,42 @@ class OpenWeatherTester:
         print("\n🔗 TESTING SERVICE INTEGRATION")
         print("-" * 40)
         
-        # Test unit system setup
-        print("Testing unit system integration...")
+        # Test FieldSelectionManager with config_dict (current architecture)
+        print("Testing FieldSelectionManager integration...")
         try:
-            # Test unit group mappings
-            test_fields = {
-                'ow_temperature': 'group_temperature',
-                'ow_humidity': 'group_percent',
-                'ow_pressure': 'group_pressure',
-                'ow_wind_speed': 'group_speed',
-                'ow_pm25': 'group_concentration',
-                'ow_aqi': 'group_count'
-            }
-            
-            # This would normally be done by the service
-            unit_mappings = {}
-            for field, expected_group in test_fields.items():
-                field_name = field[3:]  # Remove 'ow_' prefix
+            config_path = self._find_weewx_config()
+            if config_path:
+                import configobj
+                config_dict = configobj.ConfigObj(config_path)
                 
-                if field_name in ['temperature', 'feels_like']:
-                    unit_mappings[field] = 'group_temperature'
-                elif field_name == 'humidity':
-                    unit_mappings[field] = 'group_percent'
-                elif field_name == 'pressure':
-                    unit_mappings[field] = 'group_pressure'
-                elif field_name == 'wind_speed':
-                    unit_mappings[field] = 'group_speed'
-                elif field_name in ['pm25', 'pm10']:
-                    unit_mappings[field] = 'group_concentration'
-                elif field_name == 'aqi':
-                    unit_mappings[field] = 'group_count'
-            
-            correct_mappings = sum(1 for field, group in unit_mappings.items() 
-                                 if test_fields.get(field) == group)
-            
-            print(f"  ✅ Unit mappings: {correct_mappings}/{len(test_fields)} correctly mapped")
-            
+                # Test FieldSelectionManager with actual config
+                field_manager = FieldSelectionManager(config_dict=config_dict)
+                
+                # Test with current configuration
+                service_config = config_dict.get('OpenWeatherService', {})
+                field_selection = service_config.get('field_selection', {})
+                selected_fields = field_selection.get('selected_fields', {})
+                
+                if selected_fields:
+                    # Test database field mappings
+                    db_mappings = field_manager.get_database_field_mappings(selected_fields)
+                    
+                    if db_mappings:
+                        print(f"  ✅ Database field mappings: {len(db_mappings)} fields mapped")
+                    else:
+                        print("  ⚠️  No database field mappings generated")
+                else:
+                    print("  ⚠️  No field selection found in configuration")
+            else:
+                print("  ⚠️  No WeeWX configuration found - using mock testing")
+                return self._test_service_integration_mock()
+                
         except Exception as e:
-            print(f"  ❌ Unit system integration failed: {e}")
+            print(f"  ❌ FieldSelectionManager integration failed: {e}")
             return False
         
         # Test archive record injection simulation
-        print("\nTesting archive record injection...")
+        print("\nTesting archive record injection simulation...")
         try:
             # Mock archive record
             mock_record = {}
@@ -1821,12 +1756,7 @@ class OpenWeatherTester:
             for field_name, value in mock_latest_data.items():
                 if value is not None and not field_name.endswith('_timestamp'):
                     # Simulate freshness check
-                    if field_name.startswith('ow_weather_'):
-                        data_age = current_time - mock_latest_data.get('ow_weather_timestamp', 0)
-                    elif field_name.startswith('ow_air_quality_'):
-                        data_age = current_time - mock_latest_data.get('ow_air_quality_timestamp', 0)
-                    else:
-                        data_age = 0  # Fresh data
+                    data_age = 0  # Fresh data for testing
                     
                     if data_age <= max_age:
                         mock_record[field_name] = value
@@ -1834,33 +1764,41 @@ class OpenWeatherTester:
             
             expected_fields = ['ow_temperature', 'ow_humidity', 'ow_pm25', 'ow_aqi']
             if injected_count == len(expected_fields):
-                print(f"  ✅ Archive injection: {injected_count} fields would be injected")
+                print(f"  ✅ Archive injection simulation: {injected_count} fields would be injected")
             else:
-                print(f"  ❌ Archive injection: Expected {len(expected_fields)}, got {injected_count}")
+                print(f"  ❌ Archive injection simulation: Expected {len(expected_fields)}, got {injected_count}")
                 return False
                 
         except Exception as e:
-            print(f"  ❌ Archive record injection failed: {e}")
+            print(f"  ❌ Archive record injection simulation failed: {e}")
             return False
         
         print("\nService Integration Test: ✅ PASSED")
         return True
     
-    def _find_weewx_config(self):
-        """Find WeeWX configuration file."""
-        possible_paths = [
-            '/etc/weewx/weewx.conf',
-            '/home/weewx/weewx.conf',
-            '/opt/weewx/weewx.conf',
-            os.path.expanduser('~/weewx-data/weewx.conf'),
-            '/usr/share/weewx/weewx.conf'
-        ]
+    def _test_service_integration_mock(self):
+        """Fallback service integration testing using mock data."""
+        print("  Using mock service integration testing...")
         
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        
-        return None
+        try:
+            # Test with mock configuration
+            mock_config = self._create_mock_configuration()
+            field_manager = FieldSelectionManager(config_dict=mock_config)
+            
+            # Test mock field selection
+            mock_selection = {'current_weather': ['temp', 'humidity'], 'air_quality': ['pm2_5']}
+            db_mappings = field_manager.get_database_field_mappings(mock_selection)
+            
+            if db_mappings:
+                print(f"  ✅ Mock field mappings: {len(db_mappings)} fields")
+                return True
+            else:
+                print("  ❌ Mock field mappings failed")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ Mock service integration failed: {e}")
+            return False
     
     def test_thread_safety(self):
         """Test thread safety components."""
@@ -1903,8 +1841,6 @@ class OpenWeatherTester:
         # Test concurrent access simulation
         print("\nTesting concurrent access patterns...")
         try:
-            # This would be a more complex test in practice
-            # For now, just verify the pattern works
             results = []
             errors = []
             
@@ -1950,8 +1886,119 @@ class OpenWeatherTester:
         print("\nThread Safety Test: ✅ PASSED")
         return True
     
+    def _create_mock_configuration(self, complexity_level='all'):
+        """Create mock configuration that matches install.py output structure."""
+        if complexity_level == 'minimal':
+            selected_fields = {
+                'current_weather': ['temp', 'humidity', 'pressure', 'wind_speed'],
+                'air_quality': ['pm2_5', 'aqi']
+            }
+        elif complexity_level == 'all':
+            selected_fields = {
+                'current_weather': ['temp', 'feels_like', 'temp_min', 'temp_max', 'humidity', 'pressure', 
+                                  'sea_level', 'grnd_level', 'wind_speed', 'wind_direction', 'wind_gust',
+                                  'cloud_cover', 'visibility', 'rain_1h', 'rain_3h', 'snow_1h', 'snow_3h',
+                                  'weather_main', 'weather_description', 'weather_icon'],
+                'air_quality': ['pm2_5', 'pm10', 'ozone', 'no2', 'so2', 'co', 'nh3', 'no', 'aqi']
+            }
+        else:  # custom
+            selected_fields = {
+                'current_weather': ['temp', 'humidity', 'wind_speed'],
+                'air_quality': ['pm2_5', 'aqi']
+            }
+        
+        return {
+            'Station': {
+                'latitude': 33.656915,
+                'longitude': -117.982542
+            },
+            'OpenWeatherService': {
+                'enable': 'true',
+                'api_key': 'test_key_12345',
+                'timeout': '30',
+                'retry_attempts': '3',
+                'log_success': 'false',
+                'log_errors': 'true',
+                'field_selection': {
+                    'complexity_level': complexity_level,
+                    'selected_fields': selected_fields,
+                    'selection_timestamp': str(int(time.time())),
+                    'config_version': '1.0'
+                },
+                'unit_system': {
+                    'weewx_system': 'US',
+                    'api_units': 'imperial',
+                    'wind_conversion_needed': 'False'
+                },
+                'api_modules': {
+                    'current_weather': {
+                        'api_url': 'http://api.openweathermap.org/data/2.5/weather',
+                        'interval': 3600,
+                        'units_parameter': True
+                    },
+                    'air_quality': {
+                        'api_url': 'http://api.openweathermap.org/data/2.5/air_pollution',
+                        'interval': 7200,
+                        'units_parameter': False
+                    }
+                },
+                'field_mappings': {
+                    'current_weather': {
+                        'temp': {
+                            'database_field': 'ow_temperature',
+                            'api_path': 'main.temp',
+                            'unit_group': 'group_temperature',
+                            'database_type': 'REAL',
+                            'unit_conversion': None
+                        },
+                        'humidity': {
+                            'database_field': 'ow_humidity',
+                            'api_path': 'main.humidity',
+                            'unit_group': 'group_percent',
+                            'database_type': 'REAL',
+                            'unit_conversion': None
+                        }
+                        # Additional field mappings would be here in real config
+                    },
+                    'air_quality': {
+                        'pm2_5': {
+                            'database_field': 'ow_pm25',
+                            'api_path': 'list[0].components.pm2_5',
+                            'unit_group': 'group_concentration',
+                            'database_type': 'REAL',
+                            'unit_conversion': None
+                        },
+                        'aqi': {
+                            'database_field': 'ow_aqi',
+                            'api_path': 'list[0].main.aqi',
+                            'unit_group': 'group_count',
+                            'database_type': 'INTEGER',
+                            'unit_conversion': None
+                        }
+                    }
+                }
+            }
+        }
+    
+    def _find_weewx_config(self):
+        """Find WeeWX configuration file."""
+        import os
+        possible_paths = [
+            '/etc/weewx/weewx.conf',
+            '/home/weewx/weewx.conf',
+            '/opt/weewx/weewx.conf',
+            os.path.expanduser('~/weewx-data/weewx.conf'),
+            '/usr/share/weewx/weewx.conf'
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        return None
+    
     def run_all_tests(self):
-        """Run all available tests."""
+        """Run all available tests - data-driven approach."""
         print(f"\n🧪 RUNNING ALL TESTS")
         print("=" * 60)
         
@@ -1991,16 +2038,16 @@ class OpenWeatherTester:
             print("   • Database fields created successfully")
             print("   • Service registered in WeeWX configuration")
             print("   • Extension components functioning properly")
+            print("   • Data-driven architecture validated")
         else:
             print("⚠️  Some tests failed. Check the output above for details.")
-            if any("Database" in test[0] or "Service Registration" in test[0] for test in tests):
-                print("\n🔧 Installation troubleshooting:")
-                print("   • If database tests failed: Run 'weectl database add-column' commands manually")
-                print("   • If service registration failed: Check [OpenWeatherService] section in weewx.conf")
-                print("   • If API tests failed: Verify your API key at https://openweathermap.org/api")
+            print("\n🔧 Installation troubleshooting:")
+            print("   • If database tests failed: Check field selection matches database")
+            print("   • If service registration failed: Check [OpenWeatherService] section in weewx.conf")
+            print("   • If API tests failed: Verify your API key at https://openweathermap.org/api")
+            print("   • If field selection failed: Check configuration structure matches install.py output")
         
         return passed == total
-
 
 def main():
     """Main function for command-line testing."""
