@@ -1,20 +1,16 @@
 # WeeWX OpenWeather Extension
 
-A comprehensive WeeWX extension that integrates OpenWeatherMap APIs to provide weather and air quality data with **interactive field selection** and efficient API usage.
+A comprehensive WeeWX extension that integrates OpenWeatherMap APIs to provide current weather observations and air quality data from openweathermap.org. This can provide great supplemental data for comparison or supplemenetal to what your PWS may provide.  
 
 **Author**: [Shane Burkhardt](https://github.com/inguy24)
 
 ## 🌟 Features
 
 - **Interactive Field Selection**: Choose exactly which data fields you want during installation
-- **Smart Complexity Levels**: 3 predefined levels from minimal (15 fields) to all fields (29 fields)
-- **Custom Field Selection**: Advanced curses-based interface for precise field control
 - **Dynamic Database Schema**: Only creates database fields for selected data
 - **Current Weather Data**: Temperature, humidity, pressure, wind, cloud cover, visibility, precipitation
 - **Air Quality Data**: PM2.5, PM10, O₃, NO₂, SO₂, CO, NH₃, NO, OpenWeather AQI (1-5 scale)
-- **Weather Descriptions**: Complete weather categorization with icons
 - **Unit System Integration**: Automatic WeeWX unit system detection and conversion
-- **Modular Configuration**: Enable only the data modules you need
 - **Rate Limit Management**: Efficient API usage with configurable intervals
 - **Multi-Source Support**: Works alongside local weather stations  
 - **Thread-Safe Operation**: Non-blocking background data collection
