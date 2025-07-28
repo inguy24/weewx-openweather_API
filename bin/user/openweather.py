@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Zebra
+# Magic Animal: Hippo
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -311,15 +311,6 @@ class OpenWeatherBackgroundThread(threading.Thread):
     def __init__(self, config, selected_fields, config_dict=None):
         super(OpenWeatherBackgroundThread, self).__init__(name='OpenWeatherBackgroundThread')
         self.daemon = True
-        
-        # DEBUG: Check what config_dict we received - *DELETE*
-        log.error(f"DEBUG: BackgroundThread received config_dict type: {type(config_dict)}")
-        log.error(f"DEBUG: BackgroundThread config_dict is None: {config_dict is None}")
-        if config_dict:
-            log.error(f"DEBUG: BackgroundThread config_dict has Station: {'Station' in config_dict}")
-        else:
-            log.error("DEBUG: BackgroundThread received None config_dict!")
-
         self.config = config
         self.selected_fields = selected_fields
         self.running = True
@@ -439,15 +430,6 @@ class OpenWeatherService(StdService):
         
         self.engine = engine
         self.config_dict = config_dict
-
-        # DEBUG: Check what we received - *DELETE*
-        log.error(f"DEBUG: config_dict type: {type(config_dict)}")
-        log.error(f"DEBUG: config_dict is None: {config_dict is None}")
-        if config_dict:
-            log.error(f"DEBUG: config_dict keys: {list(config_dict.keys())}")
-            log.error(f"DEBUG: Station section exists: {'Station' in config_dict}")
-        else:
-            log.error("DEBUG: config_dict is None or empty!")
         
         # Get OpenWeather configuration
         self.service_config = config_dict.get('OpenWeatherService', {})
@@ -473,13 +455,6 @@ class OpenWeatherService(StdService):
             log.error("HINT: Run 'weectl extension reconfigure OpenWeather' to fix configuration")
             return
 
-        # DEBUG: Check config_dict just before calling _initialize_data_collection() - *DELETE*    
-        log.error(f"DEBUG: About to call _initialize_data_collection()")
-        log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
-        log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
-        if self.config_dict:
-            log.error(f"DEBUG: self.config_dict has Station: {'Station' in self.config_dict}")
-
         # Continue with existing initialization logic...
         self._initialize_data_collection()
         self._setup_unit_system()
@@ -491,45 +466,29 @@ class OpenWeatherService(StdService):
 
     def _initialize_data_collection(self):
         """Initialize data collection components - graceful failure."""
-        # try:  # COMMENTED OUT FOR TESTING
-
-        # ADD DEBUG BEFORE OpenWeatherDataCollector creation
-        log.error(f"DEBUG: Before creating OpenWeatherDataCollector")
-        log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
-        log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
-
-        self.api_client = OpenWeatherDataCollector(
-            api_key=self.service_config['api_key'],
-            selected_fields=self.active_fields,
-            timeout=int(self.service_config.get('timeout', 30)),
-            config_dict=self.config_dict
-        )
-        
-        # ADD DEBUG AFTER OpenWeatherDataCollector creation
-        log.error(f"DEBUG: After creating OpenWeatherDataCollector")
-        log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
-        log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
-
-        # ADD DEBUG BEFORE OpenWeatherBackgroundThread creation
-        log.error(f"DEBUG: Before creating OpenWeatherBackgroundThread")
-        log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
-        log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
-
-        self.background_thread = OpenWeatherBackgroundThread(
-            config=self.service_config,
-            selected_fields=self.active_fields,
-            config_dict=self.config_dict
-        )
-        
-        self.background_thread.start()
-        
-        log.info("Data collection initialized successfully")
-        self.service_enabled = True
-        
-        # except Exception as e:  # COMMENTED OUT FOR TESTING
-        #     log.error(f"Failed to initialize data collection: {e}")
-        #     log.error("OpenWeather data collection disabled")
-        #     self.service_enabled = False
+        try:
+            self.api_client = OpenWeatherDataCollector(
+                api_key=self.service_config['api_key'],
+                selected_fields=self.active_fields,
+                timeout=int(self.service_config.get('timeout', 30)),
+                config_dict=self.config_dict
+            )
+            
+            self.background_thread = OpenWeatherBackgroundThread(
+                config=self.service_config,
+                selected_fields=self.active_fields,
+                config_dict=self.config_dict
+            )
+            
+            self.background_thread.start()
+            
+            log.info("Data collection initialized successfully")
+            self.service_enabled = True
+            
+        except Exception as e:
+            log.error(f"Failed to initialize data collection: {e}")
+            log.error("OpenWeather data collection disabled")
+            self.service_enabled = False
 
     def _validate_basic_config(self):
         """Basic configuration validation - keep existing logic."""
