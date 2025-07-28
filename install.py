@@ -5,7 +5,7 @@ WeeWX OpenWeather Extension Installer - Reorganized with Proper Service Registra
 Provides interactive installation with field selection and automatic service management.
 Fixes uninstall issues and architectural separation of concerns.
 
-Copyright (C) 2025 WeeWX OpenWeather API Extension
+Copyright (C) 2025 Shane Burkhardt
 """
 
 import sys
