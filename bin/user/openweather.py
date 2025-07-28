@@ -1060,8 +1060,8 @@ class OpenWeatherService(StdService):
             
             # Check if this field needs conversion
             conversion_name = field_config.get('unit_conversion')
-            if not conversion_name:
-                return value  # No conversion needed
+            if not conversion_name or conversion_name == 'None':
+                return value  # No conversion needed - don't log warning
             
             # Get conversion specifications (written by install.py from YAML)
             unit_conversions = self.service_config.get('unit_conversions', {})
@@ -1083,7 +1083,7 @@ class OpenWeatherService(StdService):
             
             # Only convert if conditions match
             if (required_weewx and current_weewx_system != required_weewx) or \
-               (required_api and current_api_units != required_api):
+            (required_api and current_api_units != required_api):
                 return value  # Conditions don't match, no conversion
             
             # Apply the conversion formula
@@ -1094,7 +1094,7 @@ class OpenWeatherService(StdService):
                 converted_value = eval(formula.replace('x', str(float(value))))
                 
                 log.debug(f"Converted {field_name}: {value} → {converted_value} "
-                         f"({conversion_spec.get('from_unit', '?')} → {conversion_spec.get('to_unit', '?')})")
+                        f"({conversion_spec.get('from_unit', '?')} → {conversion_spec.get('to_unit', '?')})")
                 
                 return converted_value
                 
