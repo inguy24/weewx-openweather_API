@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Kangaroo
+# Magic Animal: Wallaby
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
