@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Elephant
+# Magic Animal: Anteater
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -939,33 +939,6 @@ class OpenWeatherService(StdService):
         if fields is None:
             fields = self.active_fields
         return sum(len(module_fields) for module_fields in fields.values() if isinstance(module_fields, list))
-    
-    def _initialize_data_collection(self):
-        """Initialize data collection components - graceful failure."""
-        try:
-            # Set up data collector with active fields only
-            self.api_client = OpenWeatherDataCollector(
-                api_key=self.service_config['api_key'],
-                selected_fields=self.active_fields,  # Use validated fields
-                timeout=int(self.service_config.get('timeout', 30))
-            )
-            
-            # Set up background collection thread
-            self.background_thread = OpenWeatherBackgroundThread(
-                config=self.service_config,
-                selected_fields=self.active_fields,  # Use validated fields
-                api_client=self.api_client
-            )
-            
-            # Start background collection
-            self.background_thread.start()
-            
-            log.info("Data collection initialized successfully")
-            
-        except Exception as e:
-            log.error(f"Failed to initialize data collection: {e}")
-            log.error("OpenWeather data collection disabled")
-            self.service_enabled = False
     
     def new_archive_record(self, event):
         """Inject OpenWeather data into archive record with unit conversion - never fails."""
