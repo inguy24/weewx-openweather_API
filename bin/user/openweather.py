@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Magic Animal: Elephant
+
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
 
