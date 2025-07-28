@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Colobus Monkey
+# Magic Animal: Zebra
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -1077,33 +1077,6 @@ class OpenWeatherService(StdService):
             
         except Exception as e:
             log.error(f"Failed to setup unit system: {e}")
-
-    def _initialize_data_collection(self):
-        """Initialize data collection components - graceful failure."""
-        try:
-            # Set up data collector with active fields only
-            self.api_client = OpenWeatherDataCollector(
-                api_key=self.service_config['api_key'],
-                selected_fields=self.active_fields,
-                timeout=int(self.service_config.get('timeout', 30))
-            )
-            
-            # Set up background collection thread (remove api_client parameter)
-            self.background_thread = OpenWeatherBackgroundThread(
-                config=self.service_config,
-                selected_fields=self.active_fields
-            )
-            
-            # Start background collection
-            self.background_thread.start()
-            
-            log.info("Data collection initialized successfully")
-            self.service_enabled = True
-            
-        except Exception as e:
-            log.error(f"Failed to initialize data collection: {e}")
-            log.error("OpenWeather data collection disabled")
-            self.service_enabled = False
 
     def _get_api_units_parameter(self):
         """Get the units parameter for OpenWeather API calls (metric/imperial/standard)."""
