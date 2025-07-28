@@ -1,16 +1,20 @@
 # WeeWX OpenWeather Extension
 
-A comprehensive WeeWX extension that integrates OpenWeatherMap APIs to provide current weather observations and air quality data from openweathermap.org. This can provide great supplemental data for comparison or supplemenetal to what your PWS may provide.  
+A comprehensive WeeWX extension that integrates OpenWeatherMap APIs to provide weather and air quality data with **interactive field selection** and efficient API usage.
 
 **Author**: [Shane Burkhardt](https://github.com/inguy24)
 
 ## 🌟 Features
 
 - **Interactive Field Selection**: Choose exactly which data fields you want during installation
+- **Smart Complexity Levels**: 3 predefined levels from minimal (15 fields) to all fields (29 fields)
+- **Custom Field Selection**: Advanced curses-based interface for precise field control
 - **Dynamic Database Schema**: Only creates database fields for selected data
 - **Current Weather Data**: Temperature, humidity, pressure, wind, cloud cover, visibility, precipitation
 - **Air Quality Data**: PM2.5, PM10, O₃, NO₂, SO₂, CO, NH₃, NO, OpenWeather AQI (1-5 scale)
+- **Weather Descriptions**: Complete weather categorization with icons
 - **Unit System Integration**: Automatic WeeWX unit system detection and conversion
+- **Modular Configuration**: Enable only the data modules you need
 - **Rate Limit Management**: Efficient API usage with configurable intervals
 - **Multi-Source Support**: Works alongside local weather stations  
 - **Thread-Safe Operation**: Non-blocking background data collection
@@ -342,53 +346,59 @@ ORDER BY date DESC;
 The extension includes comprehensive built-in testing tools:
 
 ```bash
-# Test all components
-python3 /etc/weewx/bin/user/openweather.py --test-all
+# Test all components (installation + API connectivity)
+PYTHONPATH=/usr/share/weewx:/etc/weewx/bin/user python3 bin/user/openweather.py --test-all
 
-# Test installation (database + service registration)
-python3 /etc/weewx/bin/user/openweather.py --test-install
+# Test installation only (database + service registration)
+PYTHONPATH=/usr/share/weewx:/etc/weewx/bin/user python3 bin/user/openweather.py --test-install
 
-# Test API connectivity (requires API key)
-python3 /etc/weewx/bin/user/openweather.py --test-api --api-key=YOUR_KEY
-
-# Test specific components
-python3 /etc/weewx/bin/user/openweather.py --test-data
-python3 /etc/weewx/bin/user/openweather.py --test-config
-python3 /etc/weewx/bin/user/openweather.py --test-database
-python3 /etc/weewx/bin/user/openweather.py --test-registration
-python3 /etc/weewx/bin/user/openweather.py --test-service
-python3 /etc/weewx/bin/user/openweather.py --test-fields
-
-# Show extension information
-python3 /etc/weewx/bin/user/openweather.py --info
-python3 /etc/weewx/bin/user/openweather.py --version
+# Test API connectivity only (requires service to be configured with API key)
+PYTHONPATH=/usr/share/weewx:/etc/weewx/bin/user python3 bin/user/openweather.py --test-api
 ```
 
 ### Built-in Test Suite Features:
-- **API Connectivity**: Tests all OpenWeather API endpoints
-- **Data Processing**: Validates field extraction and mapping
-- **Field Selection**: Tests complexity levels and custom selection
-- **Configuration**: Validates WeeWX integration settings
-- **Database Schema**: Checks field creation and data presence
-- **Service Registration**: Verifies WeeWX service integration
-- **Thread Safety**: Tests concurrent data access patterns
-- **Unit System**: Validates unit conversion functionality
+- **API Connectivity**: Tests all OpenWeather API endpoints using configured service settings
+- **Installation Verification**: Validates database schema, service registration, and configuration
+- **Service Integration**: Tests WeeWX service integration and data collection functionality
+- **Configuration Validation**: Verifies extension configuration structure and field mappings
+- **Data-Driven Testing**: All tests validate against actual configuration, not hardcoded expectations
 
 ### Test Output Example:
 ```
-🧪 RUNNING ALL TESTS
+🧪 RUNNING BASIC INSTALLATION TESTS
 ============================================================
-✅ API Connectivity: 2/2 APIs working
-✅ Field Selection: 29 fields correctly managed
-✅ Data Processing: Field extraction working
-✅ Configuration: WeeWX integration valid
-✅ Database Schema: 29 OpenWeather fields present
-✅ Service Registration: user.openweather.OpenWeatherService found
-✅ Service Integration: Unit mappings correct
-✅ Thread Safety: No threading errors
+OpenWeather Extension v1.0.0
+============================================================
 
-TEST SUMMARY: 8/8 tests passed
-🎉 ALL TESTS PASSED! Extension is working correctly.
+🔧 TESTING INSTALLATION
+----------------------------------------
+Checking service registration...
+  ✓ Service registered in WeeWX configuration
+Checking service configuration...
+  ✓ OpenWeatherService section found
+  ✓ API key configured: 1a2b3c4d***
+Checking station coordinates...
+  ✓ Station coordinates configured: 33.66, -117.98
+Checking field selection...
+  ✓ Field selection configured: 29 fields selected
+Checking database fields...
+  ✓ Found 29 OpenWeather database fields
+
+Installation Test: ✅ PASSED
+
+🌐 TESTING API CONNECTIVITY
+----------------------------------------
+Testing current weather API...
+  ✓ Weather API working: 22.5°C
+Testing air quality API...
+  ✓ Air quality API working: AQI 2
+
+API Connectivity Test: ✅ PASSED
+
+============================================================
+BASIC TEST SUMMARY: 2/2 tests passed
+🎉 ALL BASIC TESTS PASSED!
+Extension is properly installed and ready to use.
 ```
 
 ## 🔄 Upgrade and Maintenance
@@ -500,16 +510,13 @@ Enable detailed logging in `weewx.conf`:
 
 ```bash
 # Run installation test
-python3 /etc/weewx/bin/user/openweather.py --test-install
+PYTHONPATH=/usr/share/weewx:/etc/weewx/bin/user python3 bin/user/openweather.py --test-install
 
-# Check service registration
-python3 /etc/weewx/bin/user/openweather.py --test-registration
+# Test API connectivity (uses service configuration)
+PYTHONPATH=/usr/share/weewx:/etc/weewx/bin/user python3 bin/user/openweather.py --test-api
 
-# Verify API connectivity
-python3 /etc/weewx/bin/user/openweather.py --test-api --api-key=YOUR_KEY
-
-# Test database schema
-python3 /etc/weewx/bin/user/openweather.py --test-database
+# Run all basic tests
+PYTHONPATH=/usr/share/weewx:/etc/weewx/bin/user python3 bin/user/openweather.py --test-all
 ```
 
 ## 🤝 Contributing
@@ -529,8 +536,8 @@ weectl extension install .
 # Run tests
 python3 bin/user/openweather.py --test-all
 
-# Test specific functionality
-python3 bin/user/openweather.py --test-fields
+# Test functionality
+PYTHONPATH=/usr/share/weewx:/etc/weewx/bin/user python3 bin/user/openweather.py --test-all
 ```
 
 ## 🔮 Related Extensions (In Development)
@@ -553,6 +560,10 @@ python3 bin/user/openweather.py --test-fields
 - Advanced reporting with health trend analysis
 
 **Stay Updated**: Watch this repository and check [Releases](https://github.com/inguy24/weewx-openweather_API/releases) for announcements about these upcoming extensions.
+
+## 📄 License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 📄 License
 
