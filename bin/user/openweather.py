@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Aardvark
+# Magic Animal: Giraffe
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -492,6 +492,12 @@ class OpenWeatherService(StdService):
     def _initialize_data_collection(self):
         """Initialize data collection components - graceful failure."""
         try:
+
+            # ADD DEBUG BEFORE OpenWeatherDataCollector creation - *DELETE*
+            log.error(f"DEBUG: Before creating OpenWeatherDataCollector")
+            log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
+            log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
+
             self.api_client = OpenWeatherDataCollector(
                 api_key=self.service_config['api_key'],
                 selected_fields=self.active_fields,
@@ -499,6 +505,16 @@ class OpenWeatherService(StdService):
                 config_dict=self.config_dict
             )
             
+            # ADD DEBUG AFTER OpenWeatherDataCollector creation - *DELETE*
+            log.error(f"DEBUG: After creating OpenWeatherDataCollector")
+            log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
+            log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
+
+            # ADD DEBUG BEFORE OpenWeatherBackgroundThread creation - *DELETE*
+            log.error(f"DEBUG: Before creating OpenWeatherBackgroundThread")
+            log.error(f"DEBUG: self.config_dict type: {type(self.config_dict)}")
+            log.error(f"DEBUG: self.config_dict is None: {self.config_dict is None}")
+
             self.background_thread = OpenWeatherBackgroundThread(
                 config=self.service_config,
                 selected_fields=self.active_fields,
