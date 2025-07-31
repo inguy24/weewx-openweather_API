@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 EXTENSION_NAME="weewx-openweather"
 PACKAGE_NAME="${EXTENSION_NAME}-${VERSION}"
 BUILD_DIR="build"
