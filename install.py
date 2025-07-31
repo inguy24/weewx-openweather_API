@@ -699,7 +699,7 @@ class OpenWeatherConfigurator:
             return selected
         elif complexity_level == 'custom':
             print("\nStarting custom field selection interface...")
-            custom_selection = self.show_custom_selection(self.field_definitions)
+            custom_selection = self.ui.show_custom_selection(self.field_definitions)
             
             if custom_selection is None or len(custom_selection) == 0:
                 print("No fields selected or custom selection cancelled.")
