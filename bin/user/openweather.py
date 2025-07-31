@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Magic Animal: Wallaby
+# Magic Animal: Chimpanzee
 
 """
 WeeWX OpenWeather Extension - Enhanced with Field Selection System and Built-in Testing
@@ -32,7 +32,7 @@ import weeutil.logger
 
 log = weeutil.logger.logging.getLogger(__name__)
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 class FieldSelectionManager:
     """Manages field selection using configuration data (no YAML at runtime)."""
