@@ -5,15 +5,6 @@ All notable changes to the WeeWX OpenWeather Extension will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Planned Features
-- One Call API 3.0 integration for enhanced forecasts
-- Advanced field selection configuration
-- Historical data backfill capabilities
-- Custom AQI scale conversions (US EPA, UK, China)
-- Weather alerts and warnings integration
-
 ## [1.0.0-alpha] - 2025-01-21
 
 ### Added
@@ -70,6 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Comprehensive troubleshooting documentation
   - Debug mode with detailed logging
   - Manual database setup instructions
+
+## [1.0.1-alpha] - 2025-01-21
+
+### Fixed
+- Custom Field Selection
 
 ### Technical Implementation
 - **Base Service**: `weewx.engine.StdService` inheritance
