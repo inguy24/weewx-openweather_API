@@ -690,18 +690,23 @@ class OpenWeatherConfigurator:
     def get_selected_fields(self, complexity_level):
         """Get fields and return in flat format for database operations."""
         if complexity_level == 'all':
-            # Return all fields as flat dict for database mapping
             return {field_name: True for field_name in self.field_definitions.keys()}
         elif complexity_level == 'minimal':
-            # Return only minimal fields as flat dict
             selected = {}
             for field_name, field_info in self.field_definitions.items():
                 if 'minimal' in field_info.get('complexity_levels', []):
                     selected[field_name] = True
             return selected
         elif complexity_level == 'custom':
-            # Custom selection would return flat dict
-            return {}
+            print("\nStarting custom field selection interface...")
+            custom_selection = self.show_custom_selection(self.field_definitions)
+            
+            if custom_selection is None or len(custom_selection) == 0:
+                print("No fields selected or custom selection cancelled.")
+                print("Falling back to minimal field selection.")
+                return self.get_selected_fields('minimal')
+            
+            return custom_selection
         else:
             return self.get_selected_fields('minimal')
 
